@@ -16,6 +16,11 @@ import csv
 import fnmatch
 import pandas as pd
 
+# ==== 新增：Streamlit / API / 輔助套件（不改動任何既有函式） ====
+import io
+import tempfile
+import requests
+
 #功能: 讀取指定的excel，並將欄寬自動最佳化
 #使用方式: 先指定name_of_wb為想要自動化的workbook檔案名稱
 def auto_fit(name_of_wb=''):
@@ -537,7 +542,7 @@ def process_bmp(bmpfile):
             x2=int(i)+int(mv_sdev_window_1/2)
             x3=int(i+1)+int(mv_sdev_window_1/2)
             y2=int(a01_1[i]/100*200)
-            y3=int(a01_1[i+1]/100*200)
+            y3=int(a01_1[i+1]/100*200)            
             cv2.line(img_v, (x0, img_v.shape[0]-y0-10), (x1, img_v.shape[0]-y1-10), (255, 255, 255), 1)
             cv2.line(img_v, (x2, img_v.shape[0]-y2-10), (x3, img_v.shape[0]-y3-10), (255, 255, 255), 2) 
         #print(nss_img_path + os.path.basename(f)[:-4] + '.png')
@@ -612,7 +617,7 @@ def rename_move_rawdata():
     # 遞迴列出所有bmp檔案的絕對路徑
     for root, dirs, files in os.walk(mypath):
         for f in files:
-            if f.find('.bmp')!=-1:
+            if f.find('.bmp')!=-1':
                 fullpath = os.path.join(root, f)
                 list_of_all_file.append(fullpath)
     #重新命名所有bmp檔案
@@ -694,5 +699,99 @@ def main():
         file_destination=mypath+'//origin_png'
         shutil.move(file_source, file_destination)
 
+# ==== 新增：Streamlit 介面（不改動任何既有函式）====
+def streamlit_app():
+    import streamlit as st
+
+    st.title("NSS EDGE 影像品質分析（Streamlit）")
+
+    tab_api, tab_local = st.tabs(["API 查詢", "本地檔案上傳"])
+
+    with tab_api:
+        st.subheader("以 API 參數查詢")
+        oper = st.text_input("oper", value="5350")
+        waferid = st.text_input("waferid", value="VAC94AA0101")
+        bevel = st.text_input("bevel", value="EDU")
+        nssfile = st.text_input(
+            "nssfile",
+            value=r"//temfile300.tem.memc.com/rawdata$/SPX/EBIN_Photos/2024-09/2024-09-24/300RXM06/VAC94AA01@01@20240924005514@300RXM06@EDU_2.7z",
+        )
+        api_base = st.text_input("API Base", value="http://167.170.129.190:8507/nssra/")
+
+        if st.button("送出 API"):
+            try:
+                params = {"oper": oper, "waferid": waferid, "bevel": bevel, "nssfile": nssfile}
+                r = requests.get(api_base, params=params, timeout=60)
+                r.raise_for_status()
+                data = r.json()
+                st.success("API 呼叫成功")
+                st.json(data)
+
+                names = data.get("name", [])
+                rows = data.get("results", [])
+                if names and rows:
+                    df = pd.DataFrame(rows, columns=names)
+                    st.dataframe(df, use_container_width=True)
+
+                    # 下載 Excel
+                    buf = io.BytesIO()
+                    with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
+                        df.to_excel(writer, index=False, sheet_name="results")
+                    st.download_button(
+                        "下載結果（Excel）",
+                        data=buf.getvalue(),
+                        file_name=f"nssra_{waferid}_{bevel}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+            except Exception as e:
+                st.error(f"API 呼叫失敗：{e}")
+
+    with tab_local:
+        st.subheader("本地 BMP 分析（使用現有 process_bmp ）")
+        bmp = st.file_uploader("上傳 BMP（原始 NSS）", type=["bmp"])
+        if bmp is not None:
+            with tempfile.TemporaryDirectory() as td:
+                bmp_path = os.path.join(td, bmp.name)
+                with open(bmp_path, "wb") as f:
+                    f.write(bmp.read())
+
+                st.info("開始分析…")
+                res = process_bmp(bmp_path)
+                if not res:
+                    st.error("分析失敗或檔案格式不符。")
+                else:
+                    head=['filename','Ra_raw','RawQ50','RawQ90','RawQ99','Ra_mv','MvQ50','MvQ90','MvQ99']
+                    df = pd.DataFrame([res], columns=head)
+                    st.dataframe(df, use_container_width=True)
+
+                    # 顯示輸出圖片（整片 wafer）
+                    out_png = os.path.join(td, os.path.splitext(os.path.basename(bmp_path))[0] + ".png")
+                    if os.path.exists(out_png):
+                        st.image(out_png, caption="重建後整片 Wafer 圖（含趨勢線）", use_column_width=True)
+
+                    # 顯示 360 chart
+                    out_chart = os.path.join(td, os.path.splitext(os.path.basename(bmp_path))[0] + "_360chart.jpg")
+                    if os.path.exists(out_chart):
+                        st.image(out_chart, caption="每度 Ra 圖", use_column_width=True)
+
+                    # 下載 Excel（單片）
+                    buf = io.BytesIO()
+                    with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
+                        df.to_excel(writer, sheet_name="result", index=False)
+                    st.download_button(
+                        "下載單片結果（Excel）",
+                        data=buf.getvalue(),
+                        file_name=f"nss_local_{os.path.basename(bmp_path)}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+
 if __name__=='__main__':
-    main()
+    # 若以 `streamlit run 本檔.py` 執行，啟用 Streamlit 介面；否則維持原本 main() 批次流程
+    try:
+        import streamlit as st
+        if getattr(st, "_is_running_with_streamlit", False):
+            streamlit_app()
+        else:
+            main()
+    except Exception:
+        main()

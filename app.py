@@ -1,6 +1,3 @@
-# streamlit_app.py
-# Streamlit wrapper for the NSS BMP analyzer
-
 import io
 import os
 import zipfile
@@ -347,8 +344,8 @@ def pack_outputs_zip(base_dir: Path) -> bytes:
 # Streamlit UI
 # ===========================
 
-st.set_page_config(page_title="NSS BMP Analyzer", layout="wide")
-st.title("NSS EDGE Image Analyzer (Streamlit)")
+st.set_page_config(page_title="NSS Edge Image", layout="wide")
+st.title("NSS Edge Image")
 
 with st.sidebar:
     st.header("Options")

@@ -617,7 +617,7 @@ def rename_move_rawdata():
     # 遞迴列出所有bmp檔案的絕對路徑
     for root, dirs, files in os.walk(mypath):
         for f in files:
-            if f.find('.bmp')!=-1':
+            if f.find('.bmp')!=-1:
                 fullpath = os.path.join(root, f)
                 list_of_all_file.append(fullpath)
     #重新命名所有bmp檔案

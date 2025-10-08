@@ -6,3 +6,4 @@ pandas
 scipy
 py7zr
 xlsxwriter
+openpyxl

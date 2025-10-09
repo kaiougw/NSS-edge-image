@@ -578,62 +578,62 @@ def rename_move_rawdata():
 # 1.依序解壓縮並開一個資料夾存BMP檔案，資料夾檔案名稱為lot+slot位置，檔案名稱為lot+slot位置
 # 2.將bmp檔案搬到當前檔案夾之下
 
-def main():
-    #decompress()
+# def main():
+#     #decompress()
 
-    #獲取當前路徑
-    mypath = os.path.dirname(os.path.realpath(__file__))
-    list_of_all_file=[]
-    # 遞迴列出所有bmp檔案的絕對路徑
-    for root, dirs, files in os.walk(mypath):
-        for f in files:
-            if f.find('.bmp')!=-1:
-                fullpath = os.path.join(root, f)
-                list_of_all_file.append(fullpath)
-    summary=[]
-    head=['filename','Ra_raw','RawQ50','RawQ90','RawQ99','Ra_mv','MvQ50','MvQ90','MvQ99']
-    #利用迴圈執行主分析程式 process_bmp
-    for i in list_of_all_file:
-        bmpfile=i
-        summary_list=process_bmp(bmpfile=bmpfile)
-        summary.append(summary_list)
-    #將process_bmp return的raw data存在csv檔案
-    #np.savetxt(fname='nss_image_summary.csv',X=summary,fmt='%s',delimiter=',')
+#     #獲取當前路徑
+#     mypath = os.path.dirname(os.path.realpath(__file__))
+#     list_of_all_file=[]
+#     # 遞迴列出所有bmp檔案的絕對路徑
+#     for root, dirs, files in os.walk(mypath):
+#         for f in files:
+#             if f.find('.bmp')!=-1:
+#                 fullpath = os.path.join(root, f)
+#                 list_of_all_file.append(fullpath)
+#     summary=[]
+#     head=['filename','Ra_raw','RawQ50','RawQ90','RawQ99','Ra_mv','MvQ50','MvQ90','MvQ99']
+#     #利用迴圈執行主分析程式 process_bmp
+#     for i in list_of_all_file:
+#         bmpfile=i
+#         summary_list=process_bmp(bmpfile=bmpfile)
+#         summary.append(summary_list)
+#     #將process_bmp return的raw data存在csv檔案
+#     #np.savetxt(fname='nss_image_summary.csv',X=summary,fmt='%s',delimiter=',')
 
-    #===========================================================================以下為資料整理
-    df=pd.DataFrame(summary, columns=head)
-    #對每個column轉換成浮點數，沒有辦法轉換的文字則該列跳過不轉換
-    for i in df.columns:
-        df[i]=df[i].astype(float,errors='ignore')
-    #輸出excel並調整欄寬
-    name_of_wb='nss_image_summary.xlsx'
-    df.to_excel(name_of_wb, sheet_name='sheet1', index=False)
+#     #===========================================================================以下為資料整理
+#     df=pd.DataFrame(summary, columns=head)
+#     #對每個column轉換成浮點數，沒有辦法轉換的文字則該列跳過不轉換
+#     for i in df.columns:
+#         df[i]=df[i].astype(float,errors='ignore')
+#     #輸出excel並調整欄寬
+#     name_of_wb='nss_image_summary.xlsx'
+#     df.to_excel(name_of_wb, sheet_name='sheet1', index=False)
     
-    # from white_paper_tools import auto_fit 
-    auto_fit(name_of_wb=name_of_wb)
+#     # from white_paper_tools import auto_fit 
+#     auto_fit(name_of_wb=name_of_wb)
 
-    os.mkdir('origin_bmp') #建立資料夾給bmp原始檔案日後留存
-    os.mkdir('origin_png') #建立資料夾給png原始檔案日後留存
+#     os.mkdir('origin_bmp') #建立資料夾給bmp原始檔案日後留存
+#     os.mkdir('origin_png') #建立資料夾給png原始檔案日後留存
 
-    #將原始BMP檔案搬到名為'origin_bmp'的資料夾中，png檔案搬到'origin_png'資料夾
+#     #將原始BMP檔案搬到名為'origin_bmp'的資料夾中，png檔案搬到'origin_png'資料夾
 
-    result = [f for f in os.listdir(mypath) if os.path.isfile(os.path.join(mypath, f))]#找到當前資料夾中的檔案名稱和資料夾名稱(無路徑)
+#     result = [f for f in os.listdir(mypath) if os.path.isfile(os.path.join(mypath, f))]#找到當前資料夾中的檔案名稱和資料夾名稱(無路徑)
 
-    bmp_list=[i for i in result if fnmatch.fnmatch(i, '*.bmp')] #bmp檔案
-    png_list=[i for i in result if fnmatch.fnmatch(i, '*.png')] #png檔案
+#     bmp_list=[i for i in result if fnmatch.fnmatch(i, '*.bmp')] #bmp檔案
+#     png_list=[i for i in result if fnmatch.fnmatch(i, '*.png')] #png檔案
 
-    for i in bmp_list:
-        file_source=mypath+'//'+i
-        file_destination=mypath+'//origin_bmp'
-        shutil.move(file_source, file_destination)
+#     for i in bmp_list:
+#         file_source=mypath+'//'+i
+#         file_destination=mypath+'//origin_bmp'
+#         shutil.move(file_source, file_destination)
 
-    for i in png_list:
-        file_source=mypath+'//'+i
-        file_destination=mypath+'//origin_png'
-        shutil.move(file_source, file_destination)
+#     for i in png_list:
+#         file_source=mypath+'//'+i
+#         file_destination=mypath+'//origin_png'
+#         shutil.move(file_source, file_destination)
 
-if __name__=='__main__':
-    main()
+# if __name__=='__main__':
+#     main()
 
 
 # Configuration

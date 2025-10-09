@@ -631,24 +631,20 @@ def rename_move_rawdata():
 # if __name__=='__main__':
 #     main()
 
+# ===================== Config =====================
+ROOT_DIR = Path("/data/nss_bmps").resolve()  # set your server root here
 
-# --- Configuration ---
-# Set the top-level directory the app is allowed to browse.
-# Use an absolute path that exists on the server where Streamlit runs.
-ROOT_DIR = Path(r"\\temfile300.tem.memc.com\EDL").resolve()
-
-# --- Helpers ---
-def safe_join(root: Path, subpath: str) -> Path:
-    """Resolve subpath under root and ensure it stays inside root (no path traversal)."""
-    p = (root / subpath).resolve()
-    if not str(p).startswith(str(root)):
-        raise ValueError("Access outside of ROOT_DIR is not allowed.")
-    return p
+# ===================== Helpers ====================
+def safe_join(root: Path, subpath: Path) -> Path:
+    """Resolve subpath under root and ensure it stays inside root (no traversal)."""
+    path = (root / subpath).resolve()
+    if not str(path).startswith(str(root)):
+        raise ValueError("Access outside ROOT_DIR is not allowed.")
+    return path
 
 def list_dir(path: Path):
-    """Return (dirs, files) for a directory, filtering to .bmp for files."""
-    dirs = []
-    files = []
+    """List subfolders and .bmp files in a directory."""
+    dirs, files = [], []
     for entry in sorted(path.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
         if entry.is_dir():
             dirs.append(entry)
@@ -656,87 +652,122 @@ def list_dir(path: Path):
             files.append(entry)
     return dirs, files
 
-# --- UI ---
+def breadcrumb_parts(relpath_str: str):
+    """Return breadcrumb segments for a relative path."""
+    if not relpath_str:
+        return []
+    return list(Path(relpath_str).parts)
+
+# ===================== UI =========================
 st.set_page_config(page_title="NSS BMP Processor", layout="wide")
+st.title("NSS BMP Processor (Server-side Browser)")
+st.caption(f"Root (server): `{ROOT_DIR}`")
 
-st.title("NSS Edge Image")
-
-# Show and allow change of relative path inside ROOT_DIR
-st.caption(f"Root: `{ROOT_DIR}`")
-
-# Keep a navigation stack in session state
+# Session state: current relative path, selection
 if "relpath" not in st.session_state:
     st.session_state.relpath = ""
+if "selected" not in st.session_state:
+    st.session_state.selected = set()
 
-col_nav, col_go = st.columns([3, 1])
-with col_nav:
-    relpath = st.text_input(
-        "Browse within root:",
-        value=st.session_state.relpath,
-        help="Enter a subdirectory relative to the root."
-    )
-with col_go:
-    go = st.button("Go")
-
-# Apply navigation
+# Resolve current directory safely
 try:
-    current_dir = safe_join(ROOT_DIR, relpath)
+    current_dir = safe_join(ROOT_DIR, Path(st.session_state.relpath))
 except Exception as e:
     st.error(str(e))
+    st.session_state.relpath = ""
     current_dir = ROOT_DIR
-    relpath = ""
-if go:
-    st.session_state.relpath = relpath
 
-# Breadcrumbs
-parts = [""] + [p for p in Path(st.session_state.relpath).parts if p not in ("/",)]
-crumb = ROOT_DIR
-st.markdown(f"**Path:** `{current_dir}`")
-st.write(f"`{current_dir}`")
+# -------- Breadcrumb bar (clickable, no text input) --------
+crumb_cols = st.columns(max(1, len(breadcrumb_parts(st.session_state.relpath)) + 1))
+# Root button
+if crumb_cols[0].button("🏠 Root", key="crumb_root"):
+    st.session_state.relpath = ""
+    st.rerun()
 
-# Directory listing
+# Intermediate breadcrumbs
+parts = breadcrumb_parts(st.session_state.relpath)
+acc = Path("")
+for i, part in enumerate(parts):
+    acc = acc / part
+    if crumb_cols[i + 1].button(part, key=f"crumb_{i}_{part}"):
+        st.session_state.relpath = str(acc).replace("\\", "/")
+        st.rerun()
+
+st.divider()
+
+# -------- Directory view: folders (left) and files (right) --------
 if not current_dir.exists() or not current_dir.is_dir():
     st.warning("Directory does not exist or is not a folder.")
-else:
-    dirs, files = list_dir(current_dir)
+    st.stop()
 
-    left, right = st.columns(2)
-    with left:
-        st.subheader("Folders")
-        if current_dir != ROOT_DIR:
-            if st.button("⬆️ Up one level"):
-                st.session_state.relpath = str(Path(st.session_state.relpath).parent).replace("\\", "/")
-                st.experimental_rerun()
+dirs, files = list_dir(current_dir)
+left, right = st.columns([1, 2], gap="large")
 
+with left:
+    st.subheader("Folders")
+    if current_dir != ROOT_DIR:
+        if st.button("⬆️ Up one level", key="up"):
+            st.session_state.relpath = str(Path(st.session_state.relpath).parent).replace("\\", "/")
+            st.rerun()
+
+    if not dirs:
+        st.caption("No subfolders.")
+    else:
         for d in dirs:
             if st.button(f"📁 {d.name}", key=f"dir_{d}"):
                 new_rel = str(Path(st.session_state.relpath) / d.name).replace("\\", "/")
                 st.session_state.relpath = new_rel
-                st.experimental_rerun()
+                st.rerun()
 
-    with right:
-        st.subheader("BMP files")
-        if files:
-            # Let user select one BMP
-            file_labels = [f.name for f in files]
-            choice = st.selectbox("Select a BMP file:", file_labels, index=0)
-            chosen_file = files[file_labels.index(choice)]
+with right:
+    st.subheader("BMP files")
+    # Quick filter for long folders
+    q = st.text_input("Filter files (optional, substring match):", value="")
+    visible_files = [f for f in files if q.lower() in f.name.lower()] if q else files
 
-            st.write(f"**Selected:** `{chosen_file}`")
-            run = st.button("Process selected BMP")
+    if not visible_files:
+        st.info("No .bmp files here.")
+    else:
+        # Multi-select with checkboxes
+        st.caption("Select files to process:")
+        to_toggle_all = st.checkbox("Select/Deselect all shown", value=False, key="toggle_all")
+        if st.button("Apply to shown", key="select_apply"):
+            names = {f.name for f in visible_files}
+            if to_toggle_all:
+                st.session_state.selected |= names
+            else:
+                st.session_state.selected -= names
 
-            if run:
-                with st.spinner("Processing on server..."):
-                    try:
-                        # Call your existing analyzer directly on the server path
-                        result = process_bmp(str(chosen_file))
-                        st.success("Done.")
+        rows = []
+        for f in visible_files:
+            checked = f.name in st.session_state.selected
+            new_val = st.checkbox(f.name, value=checked, key=f"cb_{f.name}")
+            if new_val:
+                st.session_state.selected.add(f.name)
+            else:
+                st.session_state.selected.discard(f.name)
+            rows.append({"File": f.name, "Path": str(f)})
 
-                        # Show numeric results if available
-                        if isinstance(result, list) and result:
-                            st.write("**Summary:**")
-                            # Expecting: [filename, Ra_raw, RawQ50, RawQ90, RawQ99, Ra_mv, MvQ50, MvQ90, MvQ99]
-                            st.dataframe(
+        # Show a table of the current directory (optional)
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+        # Single-file quick action
+        st.markdown("**Quick process a single file:**")
+        single_choice = st.selectbox(
+            "Pick one file:",
+            [f.name for f in visible_files],
+            index=0 if visible_files else None,
+            key="single_choice"
+        )
+        if st.button("Process selected single file", key="process_one"):
+            chosen = current_dir / single_choice
+            with st.spinner("Processing on server..."):
+                try:
+                    result = process_bmp(str(chosen))
+                    st.success("Done.")
+                    if isinstance(result, list) and result:
+                        st.dataframe(
+                            pd.DataFrame(
                                 {
                                     "Metric": [
                                         "File", "Ra_raw", "RawQ50", "RawQ90", "RawQ99",
@@ -744,30 +775,52 @@ else:
                                     ][:len(result)],
                                     "Value": result
                                 }
-                            )
+                            ),
+                            use_container_width=True, hide_index=True
+                        )
+                    # Try to show artifacts your script creates next to the BMP
+                    out_base = chosen.with_suffix("")
+                    png_whole = out_base.with_suffix(".png")
+                    chart_360 = Path(chosen.parent, f"{chosen.stem}_360chart.jpg")
+                    imgs = []
+                    if png_whole.exists(): imgs.append(("Whole wafer PNG", str(png_whole)))
+                    if chart_360.exists(): imgs.append(("360 chart", str(chart_360)))
+                    if imgs:
+                        st.subheader("Generated images")
+                        for title, path in imgs:
+                            st.markdown(f"**{title}**")
+                            st.image(path, use_column_width=True)
+                except Exception as e:
+                    st.error(f"Processing failed: {e}")
 
-                        # Try to display artifacts your script writes next to the BMP
-                        out_base = chosen_file.with_suffix("")
-                        png_whole = out_base.with_suffix(".png")
-                        chart_360 = Path(chosen_file.parent, f"{chosen_file.stem}_360chart.jpg")
-
-                        imgs = []
-                        if png_whole.exists():
-                            imgs.append(("Whole wafer PNG", str(png_whole)))
-                        if chart_360.exists():
-                            imgs.append(("360 chart", str(chart_360)))
-
-                        if imgs:
-                            st.subheader("Generated images")
-                            for title, path in imgs:
-                                st.markdown(f"**{title}**")
-                                st.image(path, use_column_width=True)
-                        else:
-                            st.info("No images found to display (check your output paths).")
-
-                    except Exception as e:
-                        st.error(f"Processing failed: {e}")
-        else:
-            st.info("No .bmp files found in this folder.")
-
-st.divider()
+        st.divider()
+        # Batch action
+        st.markdown("### Batch process")
+        selected_paths = [str(current_dir / name) for name in st.session_state.selected]
+        st.write(f"Selected: **{len(selected_paths)}** file(s).")
+        if st.button("Process selected files", key="process_batch") and selected_paths:
+            progress = st.progress(0)
+            results = []
+            errors = []
+            total = len(selected_paths)
+            for i, p in enumerate(selected_paths, start=1):
+                try:
+                    res = process_bmp(p)
+                    results.append(res)
+                except Exception as e:
+                    errors.append((p, str(e)))
+                progress.progress(i / total)
+            st.success("Batch complete.")
+            if results:
+                # Normalize variable-length lists safely
+                max_len = max(len(r) if isinstance(r, list) else 0 for r in results)
+                cols = [
+                    "filename","Ra_raw","RawQ50","RawQ90","RawQ99",
+                    "Ra_mv","MvQ50","MvQ90","MvQ99"
+                ][:max_len]
+                df = pd.DataFrame(results, columns=cols)
+                st.subheader("Batch summary")
+                st.dataframe(df, use_container_width=True)
+            if errors:
+                st.subheader("Errors")
+                st.write(pd.DataFrame(errors, columns=["File", "Error"]))

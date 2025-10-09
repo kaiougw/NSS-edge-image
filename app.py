@@ -671,6 +671,7 @@ if "relpath" not in st.session_state:
 col_nav, col_go = st.columns([3, 1])
 with col_nav:
     relpath = st.text_input(
+        "Browse within root:",
         value=st.session_state.relpath,
         help="Enter a subdirectory relative to the root."
     )

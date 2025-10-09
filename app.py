@@ -635,7 +635,7 @@ def rename_move_rawdata():
 # --- Configuration ---
 # Set the top-level directory the app is allowed to browse.
 # Use an absolute path that exists on the server where Streamlit runs.
-ROOT_DIR = Path("/data/nss_bmps").resolve()
+ROOT_DIR = Path(r"\\temfile300.tem.memc.com\EDL").resolve()
 
 # --- Helpers ---
 def safe_join(root: Path, subpath: str) -> Path:
@@ -671,9 +671,8 @@ if "relpath" not in st.session_state:
 col_nav, col_go = st.columns([3, 1])
 with col_nav:
     relpath = st.text_input(
-        "Browse within root (relative path):",
         value=st.session_state.relpath,
-        help="Enter a subdirectory relative to ROOT_DIR."
+        help="Enter a subdirectory relative to the root."
     )
 with col_go:
     go = st.button("Go")

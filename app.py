@@ -638,18 +638,15 @@ def rename_move_rawdata():
 
 # Configuration
 ROOTS = { # server paths the app can access
-    "rawdata$ (M:)": Path(r"\\temfile300.tem.memc.com\rawdata$"),
-    "usr (H:)": Path(r"\\temfile300.tem.memc.com\usr")
+    "rawdata$ (M:)": Path(r"\\temfile300.tem.memc.com"),
+    "usr (H:)": Path(r"\\tem-file01.tem.memc.com")
 }
 
-# Work directory where ZIPs will be extracted on the server
-WORK_DIR = Path.cwd() / "work_extracted"
+WORK_DIR = Path.cwd() / "work_extracted" # ensure a "work_extracted" directory
 WORK_DIR.mkdir(exist_ok=True)
 
-# =========================
-# Utilities
-# =========================
 
+# Utilities
 def safe_join(root: Path, rel: str) -> Path:
     """Resolve a relative path under a given root and block path traversal."""
     p = (root / rel).resolve()
@@ -697,19 +694,16 @@ def find_bmps(root: Path):
     """Recursively find all .bmp files under root."""
     return [p for p in root.rglob("*.bmp") if p.is_file()]
 
-# =========================
-# UI
-# =========================
 
+# UI
 st.set_page_config(page_title="NSS Edge Image", layout="wide")
 st.title("NSS Edge Image")
 
 # Choose a root to browse
-root_names = list(ROOTS.keys())
-root_choice = st.selectbox("Choose a server root to browse:", root_names, index=0)
+root_choice = st.selectbox("Choose a server root:", list(ROOTS.keys()), index=0)
 ROOT = ROOTS[root_choice]
 
-st.caption(f"Browsing inside: `{ROOT}`")
+st.caption(f"`{ROOT}`")
 
 # Keep relative path in session
 if "relpath" not in st.session_state:
@@ -873,4 +867,4 @@ with right:
                 except Exception as e:
                     st.error(f"Processing failed: {e}")
 
-st.divider()
+st.markdown("---")

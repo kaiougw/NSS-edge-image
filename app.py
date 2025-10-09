@@ -583,7 +583,7 @@ def rename_move_rawdata():
 
 
 
-ROOT_DIR = r"D:\\"
+ROOT_DIR = r"C:\\"
 
 # --- quick diagnostics ---
 st.subheader("Quick path diagnostics")

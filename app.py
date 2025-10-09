@@ -22,6 +22,9 @@ from pathlib import Path
 import zipfile
 import tempfile
 from streamlit_file_browser import st_file_browser
+import subprocess
+import re
+from typing import List, Tuple
 import traceback
 
 #功能: 讀取指定的excel，並將欄寬自動最佳化 (Automatically adjust column widths in Excel)
@@ -576,6 +579,53 @@ def rename_move_rawdata():
         shutil.move(file_source, file_destination)
 
 
+
+def _run(cmd: List[str]) -> str:
+    """Run a command and return stdout (text) or empty string on error."""
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, shell=False)
+        return out.stdout if out.returncode == 0 else ""
+    except Exception:
+        return ""
+
+def discover_windows_servers() -> List[str]:
+    """Use 'net view' to enumerate visible Windows SMB servers."""
+    output = _run(["net", "view"])
+    servers = []
+    for line in output.splitlines():
+        m = re.match(r"\s*\\\\([A-Za-z0-9._-]+)\b", line)
+        if m:
+            servers.append(m.group(1))
+    return sorted(set(servers))
+
+def list_windows_shares(server: str) -> List[str]:
+    """List shares on a server using 'net view \\\\SERVER'."""
+    output = _run(["net", "view", f"\\\\{server}"])
+    shares = []
+    for line in output.splitlines():
+        m = re.match(r"\s*([A-Za-z0-9$._-]+)\s+(Disk|Print|IPC)", line, re.IGNORECASE)
+        if m:
+            shares.append(m.group(1))
+    return sorted(set(shares))
+
+def connect_share(server: str, share: str, username: str, password: str, domain: str | None = None) -> Tuple[bool, str]:
+    """
+    Optionally connect to a share using 'net use \\\\server\\share /user:DOMAIN\\user password'.
+    Prefer running Streamlit under a service account with access and skipping this.
+    """
+    target = f"\\\\{server}\\{share}"
+    user_spec = f"{domain}\\{username}" if domain else username
+    try:
+        subprocess.run(["net", "use", target, "/delete", "/y"], capture_output=True, text=True)
+        out = subprocess.run(["net", "use", target, "/user:"+user_spec, password], capture_output=True, text=True)
+        ok = out.returncode == 0
+        msg = out.stdout if ok else (out.stderr or out.stdout)
+        return ok, msg
+    except Exception as e:
+        return False, str(e)
+
+
+
 # Configuration
 ROOT_DIR = r"\\temfile300.tem.memc.com"
 
@@ -583,6 +633,56 @@ st.set_page_config(page_title="NSS Edge Image", layout="wide")
 st.title("NSS Edge Image")
 
 st.caption("Pick a **.zip** from the server. The app will extract .bmp files.")
+
+
+
+st.subheader("Choose a network location")
+
+servers = discover_windows_servers()
+if not servers:
+    st.info("No servers discovered via 'net view'. If discovery is restricted, use the manual UNC fallback below.")
+server = st.selectbox("Server", options=["<Select>"] + servers, index=0)
+
+share = None
+if server and server != "<Select>":
+    shares = list_windows_shares(server)
+    if shares:
+        share = st.selectbox("Share", options=["<Select>"] + shares, index=0)
+    else:
+        st.warning(f"No shares visible on \\\\{server}. You may need credentials or permissions.")
+
+with st.expander("Authentication (optional)"):
+    col1, col2 = st.columns(2)
+    with col1:
+        use_auth = st.checkbox("Connect with credentials", value=False)
+        domain = st.text_input("Domain (optional)", value="")
+        username = st.text_input("Username", value="")
+    with col2:
+        password = st.text_input("Password", value="", type="password")
+        st.caption("Credentials are used only to issue a one-off 'net use' to the selected share.")
+    if use_auth and server and share and server != "<Select>" and share != "<Select>":
+        if st.button("Connect now"):
+            ok, msg = connect_share(server, share, username=username, password=password, domain=(domain or None))
+            if ok:
+                st.success("Connected.")
+            else:
+                st.error(f"Connect failed: {msg}")
+
+resolved_root_dir = None
+if server and share and server != "<Select>" and share != "<Select>":
+    resolved_root_dir = fr"\\{server}\{share}"
+    st.caption(f"Browsing root: `{resolved_root_dir}`")
+
+with st.expander("Or enter a UNC path manually (fallback)"):
+    manual_unc = st.text_input("UNC path (e.g. \\\\temfile300.tem.memc.com\\rawdata$)", value="")
+    if manual_unc:
+        resolved_root_dir = manual_unc
+        st.caption(f"Browsing root (manual): `{resolved_root_dir}`")
+
+# Store for later use and to avoid editing your existing ROOT_DIR definition
+if resolved_root_dir:
+    st.session_state["resolved_root_dir"] = resolved_root_dir
+
 
 # File browser limited to ZIPs under ROOT_DIR
 event = st_file_browser(
@@ -593,6 +693,9 @@ event = st_file_browser(
     extentions=["zip"],
     glob_patterns="**/*.zip",
 )
+
+ROOT_DIR = st.session_state.get("resolved_root_dir", ROOT_DIR)
+
 
 # with st.expander("Debug event payload (optional)"):
 #     st.write(event)

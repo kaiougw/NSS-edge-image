@@ -2,6 +2,8 @@
 #需要NSS的檔案是LOT@slot@datetime@300RXM06@EDL_2，沒有_2的不適用
 #若不須重解壓縮，新命名及搬運的功能，則by pass "decompress()"這個function即可
 
+from __future__ import annotations
+
 import py7zr
 import os
 import shutil
@@ -17,7 +19,6 @@ import fnmatch
 import pandas as pd
 import streamlit as st
 from pathlib import Path
-from __future__ import annotations
 import zipfile
 import traceback
 

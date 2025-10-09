@@ -635,17 +635,11 @@ def rename_move_rawdata():
 # if __name__=='__main__':
 #     main()
 
-# =========================
+
 # Configuration
-# =========================
-# Add one or more whitelisted roots the app is allowed to browse. These are server paths.
-# For Windows network shares, prefer UNC (\\server\share). If you rely on a mapped drive (M:),
-# ensure the Streamlit service runs under a user/session that can see that drive letter.
-ROOTS = {
-    # UNC path (recommended on Windows servers/services)
-    "rawdata$ (UNC)": Path(r"\\temfile300.tem.memc.com\rawdata$"),
-    # Mapped drive (only if the Streamlit process/session actually sees M:)
-    # "M: drive": Path(r"M:\\"),
+ROOTS = { # server paths the app can access
+    "rawdata$ (M:)": Path(r"\\temfile300.tem.memc.com\rawdata$"),
+    "usr (H:)": Path(r"\\temfile300.tem.memc.com\usr")
 }
 
 # Work directory where ZIPs will be extracted on the server

@@ -17,6 +17,8 @@ import fnmatch
 import pandas as pd
 import streamlit as st
 from pathlib import Path
+import zipfile
+import traceback
 
 #功能: 讀取指定的excel，並將欄寬自動最佳化 (Automatically adjust column widths in Excel)
 #使用方式: 先指定name_of_wb為想要自動化的workbook檔案名稱
@@ -631,196 +633,201 @@ def rename_move_rawdata():
 # if __name__=='__main__':
 #     main()
 
-# ===================== Config =====================
-ROOT_DIR = Path(r"M:\EDL").resolve()  # set your server root here
+# --- CONFIGURATION ---
+# 1) Point ROOT_DIR to a server-accessible location.
+#    - Linux: a mounted path like /mnt/rawdata
+#    - Windows UNC: r"\\temfile300.tem.memc.com\rawdata$"
+#    You can also override via env var ROOT_DIR.
+ROOT_DIR = Path(
+    os.environ.get("ROOT_DIR", r"\\temfile300.tem.memc.com\rawdata$")
+).resolve() if os.name != "nt" else Path(
+    os.environ.get("ROOT_DIR", r"\\temfile300.tem.memc.com\rawdata$")
+)
 
-# ===================== Helpers ====================
-def safe_join(root: Path, subpath: Path) -> Path:
-    """Resolve subpath under root and ensure it stays inside root (no traversal)."""
-    path = (root / subpath).resolve()
-    if not str(path).startswith(str(root)):
-        raise ValueError("Access outside ROOT_DIR is not allowed.")
-    return path
+# Where to extract and process zips (per-run workspace inside ROOT_DIR or a local work dir)
+WORKSPACE_BASE = Path(os.environ.get("WORKSPACE_BASE", "./workspace")).resolve()
+WORKSPACE_BASE.mkdir(parents=True, exist_ok=True)
+
+# --- HELPERS ---
+def safe_join(root: Path, subpath: str) -> Path:
+    """Resolve 'subpath' under 'root' and ensure it stays inside (no traversal)."""
+    p = (root / subpath).resolve() if os.name != "nt" else (root / subpath)
+    # For UNC on Windows, .resolve() may not normalize; do a startswith check when possible.
+    root_str = str(root).rstrip("\\/")
+    p_str = str(p)
+    if not p_str.lower().startswith(root_str.lower()):
+        raise ValueError("Access outside of ROOT_DIR is not allowed.")
+    return p
 
 def list_dir(path: Path):
-    """List subfolders and .bmp files in a directory."""
-    dirs, files = [], []
-    for entry in sorted(path.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
-        if entry.is_dir():
-            dirs.append(entry)
-        elif entry.is_file() and entry.suffix.lower() == ".bmp":
-            files.append(entry)
-    return dirs, files
+    """Return (dirs, zip_files) inside 'path'."""
+    dirs, zips = [], []
+    try:
+        for entry in sorted(path.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
+            if entry.is_dir():
+                dirs.append(entry)
+            elif entry.is_file() and entry.suffix.lower() == ".zip":
+                zips.append(entry)
+    except PermissionError:
+        st.error(f"Permission denied: {path}")
+    return dirs, zips
 
-def breadcrumb_parts(relpath_str: str):
-    """Return breadcrumb segments for a relative path."""
-    if not relpath_str:
-        return []
-    return list(Path(relpath_str).parts)
+def extract_zip(zip_path: Path, out_dir: Path):
+    """Extract a .zip into out_dir; returns extraction root."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        zf.extractall(out_dir)
+    return out_dir
 
-# ===================== UI =========================
-st.set_page_config(page_title="NSS Edge Image", layout="wide")
-st.title("NSS Edge Image")
-st.caption(f"Root (server): `{ROOT_DIR}`")
+def find_bmps(root: Path):
+    """Find all .bmp files recursively under root."""
+    return sorted(root.rglob("*.bmp"))
 
-# Session state: current relative path, selection
+def present_artifacts(bmp_path: Path):
+    """Show likely artifacts created by your analyzer next to the BMP."""
+    base = bmp_path.with_suffix("")
+    png_whole = base.with_suffix(".png")
+    chart_360 = bmp_path.parent / f"{bmp_path.stem}_360chart.jpg"
+
+    imgs = []
+    if png_whole.exists():
+        imgs.append(("Whole wafer PNG", str(png_whole)))
+    if chart_360.exists():
+        imgs.append(("360 chart", str(chart_360)))
+
+    if imgs:
+        st.subheader(f"Artifacts for {bmp_path.name}")
+        for title, p in imgs:
+            st.markdown(f"**{title}**")
+            st.image(p, use_column_width=True)
+
+# --- UI ---
+st.set_page_config(page_title="Server ZIP → BMP Processor", layout="wide")
+st.title("Process ZIP (server-side, no upload)")
+
+st.caption(
+    "Browse files that already reside on the server. "
+    "Pick a **.zip** → extract on server → process contained **.bmp** files with your existing code."
+)
+st.info(f"ROOT_DIR: `{ROOT_DIR}`")
+st.caption("Make sure this path is accessible by the Streamlit process (mounted drive or UNC with permissions).")
+
+# Navigation state
 if "relpath" not in st.session_state:
     st.session_state.relpath = ""
-if "selected" not in st.session_state:
-    st.session_state.selected = set()
+
+# Navigation controls
+row1 = st.columns([3, 1, 1])
+with row1[0]:
+    relpath_input = st.text_input(
+        "Browse within ROOT_DIR (relative path):",
+        value=st.session_state.relpath,
+        help="Use folder buttons to navigate, or type a relative path."
+    )
+with row1[1]:
+    if st.button("Go"):
+        st.session_state.relpath = relpath_input
+with row1[2]:
+    if st.button("Reset to root"):
+        st.session_state.relpath = ""
 
 # Resolve current directory safely
 try:
-    current_dir = safe_join(ROOT_DIR, Path(st.session_state.relpath))
+    current_dir = safe_join(ROOT_DIR, st.session_state.relpath)
 except Exception as e:
     st.error(str(e))
-    st.session_state.relpath = ""
     current_dir = ROOT_DIR
-
-# -------- Breadcrumb bar (clickable, no text input) --------
-crumb_cols = st.columns(max(1, len(breadcrumb_parts(st.session_state.relpath)) + 1))
-# Root button
-if crumb_cols[0].button("Root", key="crumb_root"):
     st.session_state.relpath = ""
-    st.rerun()
 
-# Intermediate breadcrumbs
-parts = breadcrumb_parts(st.session_state.relpath)
-acc = Path("")
-for i, part in enumerate(parts):
-    acc = acc / part
-    if crumb_cols[i + 1].button(part, key=f"crumb_{i}_{part}"):
-        st.session_state.relpath = str(acc).replace("\\", "/")
-        st.rerun()
+st.markdown(f"**Path:** `{current_dir}`")
 
-st.divider()
-
-# -------- Directory view: folders (left) and files (right) --------
+# Directory listing
 if not current_dir.exists() or not current_dir.is_dir():
     st.warning("Directory does not exist or is not a folder.")
     st.stop()
 
-dirs, files = list_dir(current_dir)
-left, right = st.columns([1, 2], gap="large")
+dirs, zips = list_dir(current_dir)
 
-with left:
+nav_left, nav_right = st.columns(2)
+with nav_left:
     st.subheader("Folders")
-    if current_dir != ROOT_DIR:
-        if st.button("⬆️ Up one level", key="up"):
+    if str(current_dir).rstrip("\\/").lower() != str(ROOT_DIR).rstrip("\\/").lower():
+        if st.button("⬆️ Up one level"):
             st.session_state.relpath = str(Path(st.session_state.relpath).parent).replace("\\", "/")
             st.rerun()
+    for d in dirs:
+        if st.button(f"📁 {d.name}", key=f"dir_{d}"):
+            new_rel = str(Path(st.session_state.relpath) / d.name).replace("\\", "/")
+            st.session_state.relpath = new_rel
+            st.rerun()
 
-    if not dirs:
-        st.caption("No subfolders.")
+with nav_right:
+    st.subheader("ZIP files")
+    if not zips:
+        st.info("No .zip files here.")
     else:
-        for d in dirs:
-            if st.button(f"📁 {d.name}", key=f"dir_{d}"):
-                new_rel = str(Path(st.session_state.relpath) / d.name).replace("\\", "/")
-                st.session_state.relpath = new_rel
-                st.rerun()
+        labels = [f.name for f in zips]
+        choice = st.selectbox("Select a ZIP:", labels)
+        selected_zip = zips[labels.index(choice)]
+        st.write(f"**Selected:** `{selected_zip}`")
 
-with right:
-    st.subheader("BMP files")
-    # Quick filter for long folders
-    q = st.text_input("Filter files (optional, substring match):", value="")
-    visible_files = [f for f in files if q.lower() in f.name.lower()] if q else files
-
-    if not visible_files:
-        st.info("No .bmp files here.")
-    else:
-        # Multi-select with checkboxes
-        st.caption("Select files to process:")
-        to_toggle_all = st.checkbox("Select/Deselect all shown", value=False, key="toggle_all")
-        if st.button("Apply to shown", key="select_apply"):
-            names = {f.name for f in visible_files}
-            if to_toggle_all:
-                st.session_state.selected |= names
-            else:
-                st.session_state.selected -= names
-
-        rows = []
-        for f in visible_files:
-            checked = f.name in st.session_state.selected
-            new_val = st.checkbox(f.name, value=checked, key=f"cb_{f.name}")
-            if new_val:
-                st.session_state.selected.add(f.name)
-            else:
-                st.session_state.selected.discard(f.name)
-            rows.append({"File": f.name, "Path": str(f)})
-
-        # Show a table of the current directory (optional)
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-
-        # Single-file quick action
-        st.markdown("**Quick process a single file:**")
-        single_choice = st.selectbox(
-            "Pick one file:",
-            [f.name for f in visible_files],
-            index=0 if visible_files else None,
-            key="single_choice"
+        # Extraction destination
+        default_out = WORKSPACE_BASE / selected_zip.stem
+        out_dir = st.text_input(
+            "Extraction/output folder (server-side):",
+            value=str(default_out),
+            help="ZIP will be extracted here; BMPs will be processed in-place."
         )
-        if st.button("Process selected single file", key="process_one"):
-            chosen = current_dir / single_choice
-            with st.spinner("Processing on server..."):
-                try:
-                    result = process_bmp(str(chosen))
-                    st.success("Done.")
-                    if isinstance(result, list) and result:
-                        st.dataframe(
-                            pd.DataFrame(
-                                {
-                                    "Metric": [
-                                        "File", "Ra_raw", "RawQ50", "RawQ90", "RawQ99",
-                                        "Ra_mv", "MvQ50", "MvQ90", "MvQ99"
-                                    ][:len(result)],
-                                    "Value": result
-                                }
-                            ),
-                            use_container_width=True, hide_index=True
-                        )
-                    # Try to show artifacts your script creates next to the BMP
-                    out_base = chosen.with_suffix("")
-                    png_whole = out_base.with_suffix(".png")
-                    chart_360 = Path(chosen.parent, f"{chosen.stem}_360chart.jpg")
-                    imgs = []
-                    if png_whole.exists(): imgs.append(("Whole wafer PNG", str(png_whole)))
-                    if chart_360.exists(): imgs.append(("360 chart", str(chart_360)))
-                    if imgs:
-                        st.subheader("Generated images")
-                        for title, path in imgs:
-                            st.markdown(f"**{title}**")
-                            st.image(path, use_column_width=True)
-                except Exception as e:
-                    st.error(f"Processing failed: {e}")
 
-        st.divider()
-        # Batch action
-        st.markdown("### Batch process")
-        selected_paths = [str(current_dir / name) for name in st.session_state.selected]
-        st.write(f"Selected: **{len(selected_paths)}** file(s).")
-        if st.button("Process selected files", key="process_batch") and selected_paths:
-            progress = st.progress(0)
-            results = []
-            errors = []
-            total = len(selected_paths)
-            for i, p in enumerate(selected_paths, start=1):
-                try:
-                    res = process_bmp(p)
-                    results.append(res)
-                except Exception as e:
-                    errors.append((p, str(e)))
-                progress.progress(i / total)
-            st.success("Batch complete.")
-            if results:
-                # Normalize variable-length lists safely
-                max_len = max(len(r) if isinstance(r, list) else 0 for r in results)
-                cols = [
-                    "filename","Ra_raw","RawQ50","RawQ90","RawQ99",
-                    "Ra_mv","MvQ50","MvQ90","MvQ99"
-                ][:max_len]
-                df = pd.DataFrame(results, columns=cols)
-                st.subheader("Batch summary")
-                st.dataframe(df, use_container_width=True)
-            if errors:
-                st.subheader("Errors")
-                st.write(pd.DataFrame(errors, columns=["File", "Error"]))
+        col_run = st.columns([1, 1, 2])
+        with col_run[0]:
+            do_extract = st.button("Extract ZIP")
+        with col_run[1]:
+            do_process = st.button("Extract + Process BMPs")
+
+        if do_extract or do_process:
+            try:
+                with st.spinner("Extracting on server..."):
+                    out_path = extract_zip(selected_zip, Path(out_dir))
+                st.success(f"Extracted to: `{out_path}`")
+
+                if do_process:
+                    bmps = find_bmps(out_path)
+                    if not bmps:
+                        st.warning("No .bmp files found after extraction.")
+                    else:
+                        st.write(f"Found **{len(bmps)}** BMP files.")
+                        progress = st.progress(0)
+                        results = []
+                        for idx, bmp in enumerate(bmps, start=1):
+                            try:
+                                res = process_bmp(str(bmp))
+                                if isinstance(res, list) and res:
+                                    results.append(res)
+                                present_artifacts(bmp)
+                            except Exception:
+                                st.error(f"Failed to process {bmp.name}")
+                                st.code(traceback.format_exc())
+                            progress.progress(idx / len(bmps))
+
+                        if results:
+                            # Expected header from your process_bmp return
+                            header = ["filename","Ra_raw","RawQ50","RawQ90","RawQ99","Ra_mv","MvQ50","MvQ90","MvQ99"]
+                            # Truncate/align rows defensively
+                            rows = []
+                            for r in results:
+                                rows.append(r[:len(header)] + [None]*max(0, len(header)-len(r)))
+                            df = pd.DataFrame(rows, columns=header)
+                            st.subheader("Summary")
+                            st.dataframe(df)
+                            # Optional: save summary beside out_dir
+                            try:
+                                out_csv = Path(out_dir) / "zip_processing_summary.csv"
+                                df.to_csv(out_csv, index=False)
+                                st.caption(f"Saved summary: `{out_csv}`")
+                            except Exception:
+                                pass
+
+            except Exception:
+                st.error("Operation failed.")
+                st.code(traceback.format_exc())

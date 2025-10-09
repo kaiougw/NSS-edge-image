@@ -691,7 +691,7 @@ if go:
 # Breadcrumbs
 parts = [""] + [p for p in Path(st.session_state.relpath).parts if p not in ("/",)]
 crumb = ROOT_DIR
-st.write("**Path:** ", end=" ")
+st.markdown(f"**Path:** `{current_dir}`")
 st.write(f"`{current_dir}`")
 
 # Directory listing

@@ -633,34 +633,38 @@ def rename_move_rawdata():
 # if __name__=='__main__':
 #     main()
 
-# --- CONFIGURATION ---
-# 1) Point ROOT_DIR to a server-accessible location.
-#    - Linux: a mounted path like /mnt/rawdata
-#    - Windows UNC: r"\\temfile300.tem.memc.com\rawdata$"
-#    You can also override via env var ROOT_DIR.
-ROOT_DIR = Path(
-    os.environ.get("ROOT_DIR", r"\\temfile300.tem.memc.com\rawdata$")
-).resolve() if os.name != "nt" else Path(
-    os.environ.get("ROOT_DIR", r"\\temfile300.tem.memc.com\rawdata$")
-)
+# =========================
+# Configuration
+# =========================
+# Add one or more whitelisted roots the app is allowed to browse. These are server paths.
+# For Windows network shares, prefer UNC (\\server\share). If you rely on a mapped drive (M:),
+# ensure the Streamlit service runs under a user/session that can see that drive letter.
+ROOTS = {
+    # UNC path (recommended)
+    "rawdata$ (UNC)": Path(r"\\temfile300.tem.memc.com\rawdata$"),
+    # Mapped drive equivalent (optional; only works if the service can see M:)
+    "M: drive": Path(r"M:\\"),  # note the trailing backslash for clarity
+}
 
-# Where to extract and process zips (per-run workspace inside ROOT_DIR or a local work dir)
-WORKSPACE_BASE = Path(os.environ.get("WORKSPACE_BASE", "./workspace")).resolve()
-WORKSPACE_BASE.mkdir(parents=True, exist_ok=True)
+# Work directory where ZIPs will be extracted on the server
+WORK_DIR = Path.cwd() / "work_extracted"
+WORK_DIR.mkdir(exist_ok=True)
 
-# --- HELPERS ---
-def safe_join(root: Path, subpath: str) -> Path:
-    """Resolve 'subpath' under 'root' and ensure it stays inside (no traversal)."""
-    p = (root / subpath).resolve() if os.name != "nt" else (root / subpath)
-    # For UNC on Windows, .resolve() may not normalize; do a startswith check when possible.
-    root_str = str(root).rstrip("\\/")
-    p_str = str(p)
-    if not p_str.lower().startswith(root_str.lower()):
-        raise ValueError("Access outside of ROOT_DIR is not allowed.")
+
+# =========================
+# Utilities
+# =========================
+def safe_join(root: Path, rel: str) -> Path:
+    """Resolve a relative path under a given root and block path traversal."""
+    p = (root / rel).resolve()
+    root_resolved = root.resolve()
+    if not str(p).startswith(str(root_resolved)):
+        raise ValueError("Access outside of the selected root is not allowed.")
     return p
 
-def list_dir(path: Path):
-    """Return (dirs, zip_files) inside 'path'."""
+
+def list_directory(path: Path) -> Tuple[List[Path], List[Path]]:
+    """Return (dirs, zips) in a directory."""
     dirs, zips = [], []
     try:
         for entry in sorted(path.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
@@ -672,162 +676,184 @@ def list_dir(path: Path):
         st.error(f"Permission denied: {path}")
     return dirs, zips
 
-def extract_zip(zip_path: Path, out_dir: Path):
-    """Extract a .zip into out_dir; returns extraction root."""
-    out_dir.mkdir(parents=True, exist_ok=True)
+
+def extract_zip(zip_path: Path, out_dir: Path) -> Path:
+    """Extract a ZIP to a new folder under out_dir and return the extraction folder."""
+    target = out_dir / zip_path.stem
+    # Ensure unique folder per run if it already exists
+    i = 1
+    unique = target
+    while unique.exists():
+        unique = out_dir / f"{zip_path.stem}__{i}"
+        i += 1
+    unique.mkdir(parents=True, exist_ok=True)
+
     with zipfile.ZipFile(zip_path, "r") as zf:
-        zf.extractall(out_dir)
-    return out_dir
+        zf.extractall(unique)
+    return unique
 
-def find_bmps(root: Path):
-    """Find all .bmp files recursively under root."""
-    return sorted(root.rglob("*.bmp"))
 
-def present_artifacts(bmp_path: Path):
-    """Show likely artifacts created by your analyzer next to the BMP."""
-    base = bmp_path.with_suffix("")
-    png_whole = base.with_suffix(".png")
-    chart_360 = bmp_path.parent / f"{bmp_path.stem}_360chart.jpg"
+def find_bmps(root: Path) -> List[Path]:
+    """Recursively find all .bmp files under root."""
+    return [p for p in root.rglob("*.bmp") if p.is_file()]
 
-    imgs = []
-    if png_whole.exists():
-        imgs.append(("Whole wafer PNG", str(png_whole)))
-    if chart_360.exists():
-        imgs.append(("360 chart", str(chart_360)))
 
-    if imgs:
-        st.subheader(f"Artifacts for {bmp_path.name}")
-        for title, p in imgs:
-            st.markdown(f"**{title}**")
-            st.image(p, use_column_width=True)
+# =========================
+# UI
+# =========================
+st.set_page_config(page_title="Server ZIP Processor", layout="wide")
+st.title("Server-side ZIP Browser & NSS Processor (no upload)")
 
-# --- UI ---
-st.set_page_config(page_title="Server ZIP → BMP Processor", layout="wide")
-st.title("Process ZIP (server-side, no upload)")
+# Choose a root (like file_uploader's scope, but server-side)
+root_names = list(ROOTS.keys())
+root_choice = st.selectbox("Choose a server root to browse:", root_names, index=0)
+ROOT = ROOTS[root_choice]
 
-st.caption(
-    "Browse files that already reside on the server. "
-    "Pick a **.zip** → extract on server → process contained **.bmp** files with your existing code."
-)
-st.info(f"ROOT_DIR: `{ROOT_DIR}`")
-st.caption("Make sure this path is accessible by the Streamlit process (mounted drive or UNC with permissions).")
+st.caption(f"Browsing inside: `{ROOT}` (server path)")
 
-# Navigation state
+# Keep relative path in session (so navigation feels like a file dialog)
 if "relpath" not in st.session_state:
     st.session_state.relpath = ""
 
-# Navigation controls
-row1 = st.columns([3, 1, 1])
-with row1[0]:
-    relpath_input = st.text_input(
-        "Browse within ROOT_DIR (relative path):",
+# Optional quick-jump box (not required, just convenient)
+with st.expander("Quick jump (optional)"):
+    jump_to = st.text_input(
+        "Enter subfolder relative to the selected root (no uploads; server path only):",
         value=st.session_state.relpath,
-        help="Use folder buttons to navigate, or type a relative path."
+        placeholder=r"e.g. EDL\2025-08\C\4300\ELEDC06\TSM-QX-H8F",
     )
-with row1[1]:
     if st.button("Go"):
-        st.session_state.relpath = relpath_input
-with row1[2]:
-    if st.button("Reset to root"):
-        st.session_state.relpath = ""
+        st.session_state.relpath = jump_to.replace("/", os.sep).replace("\\", os.sep)
 
 # Resolve current directory safely
 try:
-    current_dir = safe_join(ROOT_DIR, st.session_state.relpath)
+    current_dir = safe_join(ROOT, st.session_state.relpath)
 except Exception as e:
     st.error(str(e))
-    current_dir = ROOT_DIR
+    current_dir = ROOT
     st.session_state.relpath = ""
 
+# Breadcrumb-like header
 st.markdown(f"**Path:** `{current_dir}`")
 
-# Directory listing
-if not current_dir.exists() or not current_dir.is_dir():
-    st.warning("Directory does not exist or is not a folder.")
-    st.stop()
+cols = st.columns(2)
+with cols[0]:
+    if current_dir != ROOT and st.button("⬆️ Up one level"):
+        st.session_state.relpath = str(Path(st.session_state.relpath).parent)
+        st.rerun()
 
-dirs, zips = list_dir(current_dir)
+# Directory + ZIP listing (mimics a file dialog)
+dirs, zips = list_directory(current_dir)
 
-nav_left, nav_right = st.columns(2)
-with nav_left:
+left, right = st.columns([1, 2], gap="large")
+
+with left:
     st.subheader("Folders")
-    if str(current_dir).rstrip("\\/").lower() != str(ROOT_DIR).rstrip("\\/").lower():
-        if st.button("⬆️ Up one level"):
-            st.session_state.relpath = str(Path(st.session_state.relpath).parent).replace("\\", "/")
-            st.rerun()
+    if not dirs:
+        st.write("_No subfolders here._")
     for d in dirs:
         if st.button(f"📁 {d.name}", key=f"dir_{d}"):
-            new_rel = str(Path(st.session_state.relpath) / d.name).replace("\\", "/")
-            st.session_state.relpath = new_rel
+            rel = (Path(st.session_state.relpath) / d.name)
+            st.session_state.relpath = str(rel)
             st.rerun()
 
-with nav_right:
+with right:
     st.subheader("ZIP files")
     if not zips:
-        st.info("No .zip files here.")
-    else:
-        labels = [f.name for f in zips]
-        choice = st.selectbox("Select a ZIP:", labels)
-        selected_zip = zips[labels.index(choice)]
-        st.write(f"**Selected:** `{selected_zip}`")
-
-        # Extraction destination
-        default_out = WORKSPACE_BASE / selected_zip.stem
-        out_dir = st.text_input(
-            "Extraction/output folder (server-side):",
-            value=str(default_out),
-            help="ZIP will be extracted here; BMPs will be processed in-place."
+        st.info("No .zip files found in this folder.")
+        # Helpful hint for your specific sample path
+        st.caption(
+            "Example server path you mentioned (UNC form):  "
+            r"`\\temfile300.tem.memc.com\rawdata$\EDL\2025-08\C\4300\ELEDC06\TSM-QX-H8F\WACDFAA0501.zip`"
         )
+    else:
+        # Radio list feels similar to file_uploader's single-file selection
+        file_labels = [z.name for z in zips]
+        sel_idx = st.radio(
+            "Select a .zip to process:",
+            options=range(len(file_labels)),
+            format_func=lambda i: file_labels[i],
+            index=0,
+        )
+        chosen_zip = zips[sel_idx]
+        st.write(f"**Selected:** `{chosen_zip}`")
 
-        col_run = st.columns([1, 1, 2])
-        with col_run[0]:
-            do_extract = st.button("Extract ZIP")
-        with col_run[1]:
-            do_process = st.button("Extract + Process BMPs")
+        colA, colB = st.columns([1, 1])
+        with colA:
+            do_extract_only = st.checkbox("Extract only (do not process BMPs)", value=False)
+        with colB:
+            clear_work = st.checkbox("Clear extracted folder after processing", value=False,
+                                     help="Delete the extraction folder after finishing.")
 
-        if do_extract or do_process:
-            try:
-                with st.spinner("Extracting on server..."):
-                    out_path = extract_zip(selected_zip, Path(out_dir))
-                st.success(f"Extracted to: `{out_path}`")
+        run = st.button("Process selected ZIP")
+        if run:
+            with st.spinner("Extracting and processing on server..."):
+                try:
+                    # Extract zip on server
+                    extract_dir = extract_zip(chosen_zip, WORK_DIR)
+                    st.success(f"Extracted to: {extract_dir}")
 
-                if do_process:
-                    bmps = find_bmps(out_path)
-                    if not bmps:
-                        st.warning("No .bmp files found after extraction.")
+                    if do_extract_only:
+                        st.info("Extraction completed. No processing performed (per your setting).")
                     else:
-                        st.write(f"Found **{len(bmps)}** BMP files.")
-                        progress = st.progress(0)
-                        results = []
-                        for idx, bmp in enumerate(bmps, start=1):
-                            try:
+                        # Find BMPs and run your existing processor per file
+                        bmps = find_bmps(extract_dir)
+                        if not bmps:
+                            st.warning("No .bmp files found in the ZIP.")
+                        else:
+                            results = []
+                            progress = st.progress(0, text="Processing BMPs...")
+                            for i, bmp in enumerate(bmps, start=1):
+                                # Call your original function
                                 res = process_bmp(str(bmp))
+                                # Collect only non-empty lists
                                 if isinstance(res, list) and res:
                                     results.append(res)
-                                present_artifacts(bmp)
-                            except Exception:
-                                st.error(f"Failed to process {bmp.name}")
-                                st.code(traceback.format_exc())
-                            progress.progress(idx / len(bmps))
+                                progress.progress(i / len(bmps), text=f"Processed {i}/{len(bmps)}")
 
-                        if results:
-                            # Expected header from your process_bmp return
-                            header = ["filename","Ra_raw","RawQ50","RawQ90","RawQ99","Ra_mv","MvQ50","MvQ90","MvQ99"]
-                            # Truncate/align rows defensively
-                            rows = []
-                            for r in results:
-                                rows.append(r[:len(header)] + [None]*max(0, len(header)-len(r)))
-                            df = pd.DataFrame(rows, columns=header)
-                            st.subheader("Summary")
-                            st.dataframe(df)
-                            # Optional: save summary beside out_dir
-                            try:
-                                out_csv = Path(out_dir) / "zip_processing_summary.csv"
-                                df.to_csv(out_csv, index=False)
-                                st.caption(f"Saved summary: `{out_csv}`")
-                            except Exception:
-                                pass
+                            if results:
+                                # Your process_bmp returns:
+                                # [filename, Ra_raw, RawQ50, RawQ90, RawQ99, Ra_mv, MvQ50, MvQ90, MvQ99]
+                                head = [
+                                    "filename", "Ra_raw", "RawQ50", "RawQ90", "RawQ99",
+                                    "Ra_mv", "MvQ50", "MvQ90", "MvQ99"
+                                ]
+                                # Coerce to DataFrame safely (handle ragged rows if any)
+                                max_len = max(len(r) for r in results)
+                                padded = [r + [None] * (max_len - len(r)) for r in results]
+                                df = pd.DataFrame(padded, columns=head[:max_len])
 
-            except Exception:
-                st.error("Operation failed.")
-                st.code(traceback.format_exc())
+                                st.subheader("Summary")
+                                st.dataframe(df, use_container_width=True)
+
+                                # Offer a quick download of the summary as Excel (optional convenience)
+                                out_xlsx = extract_dir / "zip_processing_summary.xlsx"
+                                df.to_excel(out_xlsx, index=False)
+                                with open(out_xlsx, "rb") as f:
+                                    st.download_button(
+                                        "Download summary Excel",
+                                        data=f,
+                                        file_name=out_xlsx.name,
+                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    )
+                            else:
+                                st.info("No results produced by process_bmp().")
+
+                    if clear_work:
+                        # Remove the extraction folder when done
+                        try:
+                            import shutil
+                            shutil.rmtree(extract_dir)
+                            st.success("Cleaned extracted folder.")
+                        except Exception as ex:
+                            st.warning(f"Could not remove extracted folder: {ex}")
+
+                except zipfile.BadZipFile:
+                    st.error("The selected file is not a valid ZIP archive.")
+                except PermissionError as e:
+                    st.error(f"Permission error: {e}")
+                except FileNotFoundError as e:
+                    st.error(f"File not found: {e}")
+                except Exception as e:
+                    # Avoid leaking sensitive paths; show succinct error
+                    st.error(f"Processing failed: {e}

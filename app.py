@@ -649,7 +649,7 @@ if selected_zip:
             rows = []
             for bmp in bmp_paths:
                 try:
-                    row = nss.process_bmp(bmp)
+                    row = process_bmp(bmp)
                     if row:
                         rows.append(row)
                 except Exception as e:
@@ -668,7 +668,7 @@ if selected_zip:
 
             # Try your auto_fit helper if available (does nothing if it errors)
             try:
-                nss.auto_fit(summary_xlsx)
+                auto_fit(summary_xlsx)
             except Exception as e:
                 st.info(f"auto_fit skipped: {e}")
 

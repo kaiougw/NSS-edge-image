@@ -20,6 +20,8 @@ import pandas as pd
 import streamlit as st
 from pathlib import Path
 import zipfile
+import tempfile
+from streamlit_file_browser import st_file_browser
 import traceback
 
 #功能: 讀取指定的excel，並將欄寬自動最佳化 (Automatically adjust column widths in Excel)
@@ -637,234 +639,104 @@ def rename_move_rawdata():
 
 
 # Configuration
-ROOTS = { # server paths the app can access
-    "rawdata$ (M:)": Path(r"\\temfile300.tem.memc.com"),
-    "usr (H:)": Path(r"\\tem-file01.tem.memc.com")
-}
+ROOT_DIR = r"\\temfile300.tem.memc.com\rawdata$"
 
-WORK_DIR = Path.cwd() / "work_extracted" # ensure a "work_extracted" directory
-WORK_DIR.mkdir(exist_ok=True)
+st.set_page_config(page_title="NSS ZIP Processor", layout="wide")
+st.title("NSS ZIP Processor (server-side browsing)")
 
+st.caption(
+    "Pick a **.zip** from the server. The app will extract BMPs to a temp folder on the server, "
+    "run your analysis, and produce an Excel summary + PNG outputs next to the temp job folder."
+)
 
-# Utilities
-def safe_join(root: Path, rel: str) -> Path:
-    """Resolve a relative path under a given root and block path traversal."""
-    p = (root / rel).resolve()
-    root_resolved = root.resolve()
-    if not str(p).startswith(str(root_resolved)):
-        raise ValueError("Access outside of the selected root is not allowed.")
-    return p
+# File browser limited to ZIPs under ROOT_DIR
+event = st_file_browser(
+    ROOT_DIR,
+    key="fs",
+    show_choose_file=True,           # show a “Choose” button
+    show_download_file=False,        # keep data on server
+    extentions=["zip"],              # only show .zip
+    glob_patterns="**/*.zip",        # match nested ZIPs
+)
 
+# The component returns a dict describing user actions.
+# Print it in dev to learn its exact shape in your environment.
+with st.expander("Debug event payload (optional)"):
+    st.write(event)
 
-def list_directory(path: Path):
-    """Return (dirs, zips) for a directory. Tolerates missing/denied paths."""
-    dirs, zips = [], []
-    try:
-        entries = sorted(path.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
-    except FileNotFoundError:
-        # Directory does not exist
-        return [], []
-    except PermissionError:
-        st.error(f"Permission denied: {path}")
-        return [], []
-    for entry in entries:
-        if entry.is_dir():
-            dirs.append(entry)
-        elif entry.is_file() and entry.suffix.lower() == ".zip":
-            zips.append(entry)
-    return dirs, zips
-
-
-def extract_zip(zip_path: Path, out_dir: Path) -> Path:
-    """Extract a ZIP to a new folder under out_dir and return the extraction folder."""
-    target = out_dir / zip_path.stem
-    unique = target
-    i = 1
-    while unique.exists():
-        unique = out_dir / f"{zip_path.stem}__{i}"
-        i += 1
-    unique.mkdir(parents=True, exist_ok=True)
-
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        zf.extractall(unique)
-    return unique
-
-
-def find_bmps(root: Path):
-    """Recursively find all .bmp files under root."""
-    return [p for p in root.rglob("*.bmp") if p.is_file()]
-
-
-# UI
-st.set_page_config(page_title="NSS Edge Image", layout="wide")
-st.title("NSS Edge Image")
-
-# Choose a root to browse
-root_choice = st.selectbox("Choose a server root:", list(ROOTS.keys()), index=0)
-ROOT = ROOTS[root_choice]
-
-st.caption(f"`{ROOT}`")
-
-# Keep relative path in session
-if "relpath" not in st.session_state:
-    st.session_state.relpath = ""
-
-# Optional quick jump
-with st.expander("Quick jump"):
-    jump_to = st.text_input(
-        "Enter subfolder relative to the selected root:",
-        value=st.session_state.relpath,
-        placeholder=r"e.g. EDL\2025-08\C\4300\ELEDC06\TSM-QX-H8F",
-    )
-    if st.button("Go"):
-        # Normalize separators for the current OS
-        normalized = jump_to.replace("/", os.sep).replace("\\", os.sep)
-        st.session_state.relpath = normalized
-
-# Resolve current directory safely
-try:
-    current_dir = safe_join(ROOT, st.session_state.relpath)
-except Exception as e:
-    st.error(str(e))
-    current_dir = ROOT
-    st.session_state.relpath = ""
-
-st.markdown(f"**Path:** `{current_dir}`")
-
-# Early checks for existence and directory
-if not current_dir.exists():
-    st.error("This path does not exist on the server. Check that the root is reachable and the subpath is correct.")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Go to root"):
-            st.session_state.relpath = ""
-            st.rerun()
-    with col2:
-        st.stop()
-
-if not current_dir.is_dir():
-    st.error("This path is not a directory.")
-    if st.button("Go to root"):
-        st.session_state.relpath = ""
-        st.rerun()
-    st.stop()
-
-# Navigation controls
-nav_cols = st.columns(2)
-with nav_cols[0]:
-    if current_dir != ROOT and st.button("Up one level"):
-        st.session_state.relpath = str(Path(st.session_state.relpath).parent)
-        st.rerun()
-
-# Directory + ZIP listing
-dirs, zips = list_directory(current_dir)
-
-left, right = st.columns([1, 2], gap="large")
-
-with left:
-    st.subheader("Folders")
-    if not dirs:
-        st.write("No subfolders here.")
-    for d in dirs:
-        if st.button(f"{d.name}", key=f"dir_{d}"):
-            rel = (Path(st.session_state.relpath) / d.name)
-            st.session_state.relpath = str(rel)
-            st.rerun()
-
-with right:
-    st.subheader("ZIP files")
-    if not zips:
-        st.info("No .zip files found in this folder.")
-        st.caption(
-            "Example UNC path you can reach if permissions allow:  "
-            r"\\temfile300.tem.memc.com\rawdata$\EDL\2025-08\C\4300\ELEDC06\TSM-QX-H8F\WACDFAA0501.zip"
-        )
-    else:
-        file_labels = [z.name for z in zips]
-        sel_idx = st.radio(
-            "Select a .zip to process:",
-            options=range(len(file_labels)),
-            format_func=lambda i: file_labels[i],
-            index=0,
-        )
-        chosen_zip = zips[sel_idx]
-        st.write(f"Selected: `{chosen_zip}`")
-
-        colA, colB = st.columns([1, 1])
-        with colA:
-            do_extract_only = st.checkbox("Extract only (do not process BMPs)", value=False)
-        with colB:
-            clear_work = st.checkbox(
-                "Clear extracted folder after processing",
-                value=False,
-                help="Delete the extraction folder after finishing."
-            )
-
-        run = st.button("Process selected ZIP")
-        if run:
-            with st.spinner("Extracting and processing on server..."):
-                try:
-                    # Extract zip on server
-                    extract_dir = extract_zip(chosen_zip, WORK_DIR)
-                    st.success(f"Extracted to: {extract_dir}")
-
-                    if do_extract_only:
-                        st.info("Extraction completed. No processing performed.")
-                    else:
-                        # Find BMPs and run your existing processor per file
-                        bmps = find_bmps(extract_dir)
-                        if not bmps:
-                            st.warning("No .bmp files found in the ZIP.")
-                        else:
-                            results = []
-                            progress = st.progress(0, text="Processing BMPs...")
-                            for i, bmp in enumerate(bmps, start=1):
-                                res = process_bmp(str(bmp))  # calls your existing function
-                                if isinstance(res, list) and res:
-                                    results.append(res)
-                                progress.progress(i / len(bmps), text=f"Processed {i}/{len(bmps)}")
-
-                            if results:
-                                # Expected columns from your process_bmp
-                                head = [
-                                    "filename", "Ra_raw", "RawQ50", "RawQ90", "RawQ99",
-                                    "Ra_mv", "MvQ50", "MvQ90", "MvQ99"
-                                ]
-                                max_len = max(len(r) for r in results)
-                                padded = [r + [None] * (max_len - len(r)) for r in results]
-                                df = pd.DataFrame(padded, columns=head[:max_len])
-
-                                st.subheader("Summary")
-                                st.dataframe(df, use_container_width=True)
-
-                                # Write summary to Excel in the extraction folder and offer download
-                                out_xlsx = extract_dir / "zip_processing_summary.xlsx"
-                                df.to_excel(out_xlsx, index=False)
-                                with open(out_xlsx, "rb") as f:
-                                    st.download_button(
-                                        "Download summary Excel",
-                                        data=f,
-                                        file_name=out_xlsx.name,
-                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                    )
-                            else:
-                                st.info("No results produced by process_bmp().")
-
-                    if clear_work:
-                        try:
-                            import shutil
-                            shutil.rmtree(extract_dir)
-                            st.success("Cleaned extracted folder.")
-                        except Exception as ex:
-                            st.warning(f"Could not remove extracted folder: {ex}")
-
-                except zipfile.BadZipFile:
-                    st.error("The selected file is not a valid ZIP archive.")
-                except PermissionError as e:
-                    st.error(f"Permission error: {e}")
-                except FileNotFoundError as e:
-                    st.error(f"File not found: {e}")
-                except Exception as e:
-                    st.error(f"Processing failed: {e}")
+# Try to get a selected filepath from the event payload
+selected_zip = None
+if event and isinstance(event, dict):
+    # Components may return selected item(s) in different keys.
+    # These branches cover common shapes seen in the component.
+    if "path" in event and isinstance(event["path"], str) and event.get("event") == "file_selected":
+        selected_zip = event["path"]
+    elif "selected" in event and event["selected"]:
+        # Sometimes it's a list of dicts with 'path' keys
+        maybe_item = event["selected"][0]
+        if isinstance(maybe_item, dict) and "path" in maybe_item:
+            selected_zip = maybe_item["path"]
 
 st.markdown("---")
+
+if selected_zip:
+    st.success(f"Selected ZIP: `{selected_zip}`")
+
+    if st.button("Process ZIP on server", type="primary"):
+        # Create a unique working directory on the server
+        with tempfile.TemporaryDirectory(prefix="nss_zip_") as workdir:
+            outdir = os.path.join(workdir, "outputs")
+            os.makedirs(outdir, exist_ok=True)
+
+            # Extract only BMPs to the working directory
+            bmp_paths = []
+            with zipfile.ZipFile(selected_zip) as zf:
+                for info in zf.infolist():
+                    if info.filename.lower().endswith(".bmp"):
+                        zf.extract(info, workdir)
+                        bmp_paths.append(os.path.join(workdir, info.filename))
+
+            if not bmp_paths:
+                st.error("No BMP files found inside the ZIP.")
+                st.stop()
+
+            # Run your existing analyzer per BMP without modifying your code
+            # process_bmp returns: [filename, Ra_raw, RawQ50, RawQ90, RawQ99, Ra_mv, MvQ50, MvQ90, MvQ99]
+            rows = []
+            for bmp in bmp_paths:
+                try:
+                    row = process_bmp(bmp)
+                    if row:
+                        rows.append(row)
+                except Exception as e:
+                    st.warning(f"Failed on {os.path.basename(bmp)}: {e}")
+
+            if not rows:
+                st.error("Processing finished but no results were produced.")
+                st.stop()
+
+            # Build summary DataFrame and save Excel (using your column names)
+            cols = ['filename','Ra_raw','RawQ50','RawQ90','RawQ99','Ra_mv','MvQ50','MvQ90','MvQ99']
+            df = pd.DataFrame(rows, columns=cols)
+
+            summary_xlsx = os.path.join(outdir, "nss_image_summary.xlsx")
+            df.to_excel(summary_xlsx, index=False)
+
+            # Try your auto_fit helper if available (does nothing if it errors)
+            try:
+                auto_fit(summary_xlsx)
+            except Exception as e:
+                st.info(f"auto_fit skipped: {e}")
+
+            # Surface results in the UI
+            st.subheader("Summary")
+            st.dataframe(df, use_container_width=True)
+            st.download_button(
+                "Download Excel summary",
+                data=open(summary_xlsx, "rb").read(),
+                file_name="nss_image_summary.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
+            st.success(f"Done. Working directory (server): {workdir}")
+            st.caption("Note: Images (PNG charts/crops) were written to the working directory during processing.")

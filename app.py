@@ -641,8 +641,8 @@ def rename_move_rawdata():
 # Configuration
 ROOT_DIR = r"\\temfile300.tem.memc.com\rawdata$"
 
-st.set_page_config(page_title="NSS ZIP Processor", layout="wide")
-st.title("NSS ZIP Processor (server-side browsing)")
+st.set_page_config(page_title="NSS Edge Image", layout="wide")
+st.title("NSS Edge Image")
 
 st.caption(
     "Pick a **.zip** from the server. The app will extract BMPs to a temp folder on the server, "

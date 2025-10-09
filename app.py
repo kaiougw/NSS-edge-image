@@ -856,4 +856,6 @@ with right:
                     st.error(f"File not found: {e}")
                 except Exception as e:
                     # Avoid leaking sensitive paths; show succinct error
-                    st.error(f"Processing failed: {e}
+                    st.error(f"Processing failed: {e}")
+st.divider()
+                             

@@ -703,8 +703,8 @@ def find_bmps(root: Path) -> List[Path]:
 # =========================
 # UI
 # =========================
-st.set_page_config(page_title="Server ZIP Processor", layout="wide")
-st.title("Server-side ZIP Browser & NSS Processor (no upload)")
+st.set_page_config(page_title="NSS Edge Image", layout="wide")
+st.title("NSS Edge Image")
 
 # Choose a root (like file_uploader's scope, but server-side)
 root_names = list(ROOTS.keys())

@@ -632,7 +632,7 @@ def process_zip(job: JobIn):
 
 
 API_URL = "http://127.0.0.1:8000/process_zip"  # adjust for your deployment
-ROOT_DIR = r"temfile300.tem.memc.com"
+ROOT_DIR = r"\\temfile300.tem.memc.com"
 
 st.title("NSS Edge")
 

@@ -15,15 +15,12 @@ import glob
 import csv
 import fnmatch
 import pandas as pd
+import streamlit as st
+from pathlib import Path
 
-# --- Added: optional Streamlit/API helpers (does not modify your existing functions) ---
-import io
-import tempfile
-import requests
-
-#功能: 讀取指定的excel，並將欄寬自動最佳化
+#功能: 讀取指定的excel，並將欄寬自動最佳化 (Automatically adjust column widths in Excel)
 #使用方式: 先指定name_of_wb為想要自動化的workbook檔案名稱
-def auto_fit(name_of_wb=''):
+def auto_fit(name_of_wb=''): # Input: Excel file name
     if name_of_wb !='':   
         from openpyxl import load_workbook
         from openpyxl.utils import get_column_letter
@@ -40,129 +37,39 @@ def auto_fit(name_of_wb=''):
                 for row_number in range(1, ws.max_row+1):
                     #用try避免讀到空白時跳error卡住
                     try: #取特定欄位A1的值，要寫ws['A1'].value，依此類推
-                        if len(ws[f'{letter}{row_number}'].value)>max_width: 
+                        if len(ws[f'{letter}{row_number}'].value)>max_width: # update max_width if the length of cell value is longer than current max_width
                             max_width=len(ws[f'{letter}{row_number}'].value)
                     except: 
                         pass
                 ws.column_dimensions[letter].width=(max_width+2)*1.2
         wb.save(name_of_wb)
 
-#=======================================================================
-#功能: 與oracle database連線，並下sql後，回傳df
-#使用方式: 先確認database為wcs3db or ods3db，輸入想要查的LOT和參數
-"""如下:
-database='wcs3db'
-LOT=['UDE2GAH02']
-Par=['CNL>.5']
-"""
-def data_retrieve(database='ods3db',LOT=[],Par=[]):
-
-    #生成sql code
-    def sql_code(LOT=[],Par=[]):
-        LOTs=''
-        Pars=''
-        for i in LOT:
-            LOTs=LOTs+""","""+"""'"""+i+"""'"""
-        LOTs=LOTs[1:]
-
-        for j in Par:
-            Pars=Pars+""","""+"""'"""+j+"""'"""
-        Pars=Pars[1:]
-
-        sql=\
-        """
-        SELECT 
-        EQPSP101.ES_PO "EA_PO",
-        EQPSP101.ES_OPER "EA_OPER",
-        EQPSP101.ES_EQP_ID "EA_EQP_ID",
-        EQPSP101.ES_TRS_TIME "EA_TRS_TIME",
-        EQPSP102.ES_LOT "EA_LOT",
-        EQPSP102.ES_WAF_ID "EA_WAF_ID",
-        EQPSP102.ES_DATA_FLG  "EA_DATA_FLG",
-        EQPSP102.ES_PARM "EA_PARM",
-        to_number(EQPSP102.ES_VALUE) "EA_VALUE"
-        FROM DBMGR.EQPSP102 EQPSP102, DBMGR.EQPSP101 EQPSP101
-        WHERE 
-        EQPSP102.ES_LOT in ("""+LOTs+""") AND 
-        EQPSP102.ES_PARM in ("""+Pars+""") AND
-        EQPSP102.ES_LOT=EQPSP101.ES_LOT AND 
-        EQPSP102.ES_TRS_TIME=EQPSP101.ES_TRS_TIME AND 
-        EQPSP101.ES_TRS_TIME IN (SELECT Max(EQPSP101.ES_TRS_TIME) FROM DBMGR.EQPSP101 EQPSP101 GROUP BY EQPSP101.ES_LOT, EQPSP101.ES_OPER)
-        """
-        return sql
-    #===========================================================================
-
-    #call sql_code function, 將output的SQL code存在變數sql中
-    sql=sql_code(LOT=LOT, Par=Par)
-    #載入連線oracle database的模組
-    import oracledb
-    import pandas as pd
-    import warnings
-    #by pass UserWarning from pandas: pandas only supports SQLAlchemy connectable (engine/connection) or database string URI or sqlite3 DBAPI2 connection. Other DBAPI2 objects are not tested. Please consider using SQLAlchemy.
-    warnings.simplefilter(action='ignore', category=UserWarning)
-    #限定使用thick mode
-    oracledb.init_oracle_client()
-    p_username = "temusers"
-    p_password = "temusers"
-    #連線
-    params = oracledb.ConnectParams(host=database+'.tem.memc.com',port='1521',service_name=database)
-    con = oracledb.connect(user=p_username, password=p_password, params=params)
-    #用pandas下sql並將表格存到df變數中
-    df = pd.read_sql(sql, con=con)
-    con.close
-    #print(df)
-    return df
-
-#=======================================================================
-
-#從dataframe整理資料並輸出excel==================================================================================
-#使用方式: 輸入要分析的站點，以及想要生成的workbook名稱
-def statistic_analysis(df=[],EA_OPER='5900',name_of_wb='test'):
-    import pandas as pd
-    from functools import reduce
-    #建立wafer基本資訊表
-    df1=df.loc[:,'EA_PO':'EA_DATA_FLG'].drop_duplicates()
-    #取出一個list包含想要分析的參數,存在變數cols中,即cols=['ERO','SFQR'......]
-    cols=df['EA_PARM'].unique()
-    #做出一個list, [df1,df_ERO,df_SFQR......], 供之後merge用
-    data_frames=[df1]
-    for i in cols:
-        #取出特定參數，如:ERO，存在變數df_specificparm中
-        df_specificparm=df.loc[(df['EA_PARM']==i),:].drop_duplicates() 
-        #篩選出欄位名稱不等於'EA_PARM'的資料
-        df_parameter=df_specificparm[[col for col in df.columns if col !='EA_PARM']]
-        #將'EA_VALUE'欄位命名為特定參數，到這邊已經完成SQL中 decode的功能，把整個dataframe存進名為dataframes的list中
-        data_frames.append(df_parameter.rename({'EA_VALUE':i}, axis=1))
-    #merge
-    df_merged = reduce(lambda  left,right: pd.merge(left,right, how='outer'), data_frames)
-    #使用.describe()輸出統計表
-    summary_df=df_merged.loc[df_merged['EA_OPER']==EA_OPER,[col for col in cols]].describe()
-    #將統計表整理成MRB格式
-    final_df=[]
-    for j in summary_df.columns:
-        for k in ['mean','std','count']:
-            final_df.append([j+'_'+k,summary_df.loc[k,j]])
-        final_df.append([j+'_sample','all'])
-
-    #輸出成excel，包含三個分頁: 1. white paper格式 2. 5900 統計表 3. 59XX raw data
-
-    with pd.ExcelWriter(name_of_wb) as writer:  
-        pd.DataFrame(cols, columns=['parameter_sequence']).to_excel(writer, sheet_name='parameter_sequence', index=False)
-        pd.DataFrame(final_df, columns=['parameter','data']).to_excel(writer, sheet_name='MRB_format', index=False)
-        summary_df.to_excel(writer, sheet_name='summary', index=True) #要顯示index, 因為統計表的index是mean, std, count等參數名稱
-        df_merged.to_excel(writer, sheet_name='raw', index=False)
-
 
 
 def moving_average(x, w):
+    """
+    Input:
+        x: 1D array
+        w: window size (integer)
+    """
     return np.convolve(x, np.ones(w), 'valid') / w
 
 def rolling_window(a, window):
+    """
+    Input:
+        a: 1D array
+        window: window size (integer)
+    """
     shape = a.shape[:-1] + (a.shape[-1] - window + 1, window)
     strides = a.strides + (a.strides[-1],)
     return np.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)
     
 def find_nonblack(npy1d,threshold):
+    """
+    Input:
+        npy1d: 1D array
+        threshold: value to compare against (integer)
+    """
     peaks = scipy.signal.find_peaks_cwt(npy1d,10)
     #plt.plot(col)
     #plt.plot(peaks ,col[peaks],'o')
@@ -173,7 +80,15 @@ def find_nonblack(npy1d,threshold):
             break
     return res
 
-def convet_nss_rawimage(img_file):
+
+def convert_nss_rawimage(img_file):
+    """
+    Process a raw NSS BMP image and detect the notch position to reconstruct the full wafer edge image.
+    Input:
+        img_file: path to the BMP image file (string)
+    Output:
+        img_v1: processed image as a 2D array
+    """
     #img_file='.\\P1276BM\\mjl\\1-9 (SILTRONIC-WF)_EDU_0.bmp'
     img_v = cv2.imread( img_file,cv2.IMREAD_GRAYSCALE)
     #print(img_v.shape)
@@ -184,24 +99,24 @@ def convet_nss_rawimage(img_file):
         res_u=0
         res_l=0
         
-        for x, val in enumerate(col_u):
+        for x, val in enumerate(col_u): # scan upper column for first pixel >=254
             if val>=254:
                 res_u=x
                 break
-        for x, val in enumerate(col_l):
+        for x, val in enumerate(col_l): # scan lower column for first pixel >=254
             if val>=254:
                 res_l=x
                 break       
         
-        res=np.max([res_u,res_l]) # upper or lower
+        res=np.max([res_u,res_l]) # tkae upper or lower detected position as notch position
         
-        if res>0:
+        if res>0: # if notch is found, proceed to reconstruct image and slice image into two parts 
             end_1=int((img_v.shape[0]-res)/1038)-2
             top_1=(359-end_1+1)
             img_1=img_v[res:res+end_1*1038,:]
             img_2=img_v[res-top_1*1038:res,:]
             
-            img_v1 = cv2.vconcat([img_1, img_2])
+            img_v1 = cv2.vconcat([img_1, img_2]) # concatenate two parts vertically to form a continuous wafer image
             #print(img_v1.shape)
             for i in range(0,360):
                 #cv2.line(img_v1, (0,i*1038), (45,i*1038), (255, 255, 255), 3)
@@ -222,9 +137,15 @@ def convet_nss_rawimage(img_file):
         return np.array([])
 
 def turning_points(array):
-    ''' turning_points(array) -> min_indices, max_indices
+    ''' 
     Finds the turning points within an 1D array and returns the indices of the minimum and 
     maximum turning points in two separate lists.
+
+    Input:
+        array: 1D array
+    Output:
+        idx_min: list of indices of minimum turning points
+        idx_max: list of indices of maximum turning points
     '''
     idx_max, idx_min = [], []
     if (len(array) < 3): 
@@ -238,8 +159,8 @@ def turning_points(array):
 
     ps = get_state(array[0], array[1])
     begin = 1
-    for i in range(2, len(array)):
-        s = get_state(array[i - 1], array[i])
+    for i in range(2, len(array)): # if trend changes (from rising to falling or falling to rising), record turning point
+        s = get_state(array[i - 1], array[i]) # compare each pair of values
         if s != NEUTRAL:
             if ps != NEUTRAL and ps != s:
                 if s == FALLING: 
@@ -251,11 +172,19 @@ def turning_points(array):
     return idx_min, idx_max
 
 def process_bmp0(bmpfile):
+    """
+    Process a BMP file to analyze wafer edge image, compute roughness, and generate related charts and CSV files.
+
+    Input:
+        bmpfile: path to the BMP image file (string)
+    Output:
+        List containing analysis results
+    """
     #print(bmpfile)
 
     nss_img_path= os.path.dirname(bmpfile) +'/'
     img_file=bmpfile#'.//P1276BM//' + f + '.png'
-    img_v=convet_nss_rawimage(img_file)
+    img_v=convert_nss_rawimage(img_file)
 
     #print(nss_img_path + os.path.basename(bmpfile)[:-4])
 
@@ -383,7 +312,7 @@ def process_bmp(bmpfile):
     f=bmpfile
     nss_img_path= os.path.dirname(bmpfile) +'/'
     img_file=bmpfile#'.//P1276BM//' + f + '.png'
-    img_v=convet_nss_rawimage(img_file)
+    img_v=convert_nss_rawimage(img_file)
 
     #print(nss_img_path + os.path.basename(bmpfile)[:-4])
     #row stdev 1038
@@ -542,7 +471,7 @@ def process_bmp(bmpfile):
             x2=int(i)+int(mv_sdev_window_1/2)
             x3=int(i+1)+int(mv_sdev_window_1/2)
             y2=int(a01_1[i]/100*200)
-            y3=int(a01_1[i+1]/100*200)            
+            y3=int(a01_1[i+1]/100*200)
             cv2.line(img_v, (x0, img_v.shape[0]-y0-10), (x1, img_v.shape[0]-y1-10), (255, 255, 255), 1)
             cv2.line(img_v, (x2, img_v.shape[0]-y2-10), (x3, img_v.shape[0]-y3-10), (255, 255, 255), 2) 
         #print(nss_img_path + os.path.basename(f)[:-4] + '.png')
@@ -645,152 +574,200 @@ def rename_move_rawdata():
 # 1.依序解壓縮並開一個資料夾存BMP檔案，資料夾檔案名稱為lot+slot位置，檔案名稱為lot+slot位置
 # 2.將bmp檔案搬到當前檔案夾之下
 
-def main():
-    #decompress()
+# def main():
+#     #decompress()
 
-    #獲取當前路徑
-    mypath = os.path.dirname(os.path.realpath(__file__))
-    list_of_all_file=[]
-    # 遞迴列出所有bmp檔案的絕對路徑
-    for root, dirs, files in os.walk(mypath):
-        for f in files:
-            if f.find('.bmp')!=-1:
-                fullpath = os.path.join(root, f)
-                list_of_all_file.append(fullpath)
-    summary=[]
-    head=['filename','Ra_raw','RawQ50','RawQ90','RawQ99','Ra_mv','MvQ50','MvQ90','MvQ99']
-    #利用迴圈執行主分析程式 process_bmp
-    for i in list_of_all_file:
-        bmpfile=i
-        summary_list=process_bmp(bmpfile=bmpfile)
-        summary.append(summary_list)
-    #將process_bmp return的raw data存在csv檔案
-    #np.savetxt(fname='nss_image_summary.csv',X=summary,fmt='%s',delimiter=',')
+#     #獲取當前路徑
+#     mypath = os.path.dirname(os.path.realpath(__file__))
+#     list_of_all_file=[]
+#     # 遞迴列出所有bmp檔案的絕對路徑
+#     for root, dirs, files in os.walk(mypath):
+#         for f in files:
+#             if f.find('.bmp')!=-1:
+#                 fullpath = os.path.join(root, f)
+#                 list_of_all_file.append(fullpath)
+#     summary=[]
+#     head=['filename','Ra_raw','RawQ50','RawQ90','RawQ99','Ra_mv','MvQ50','MvQ90','MvQ99']
+#     #利用迴圈執行主分析程式 process_bmp
+#     for i in list_of_all_file:
+#         bmpfile=i
+#         summary_list=process_bmp(bmpfile=bmpfile)
+#         summary.append(summary_list)
+#     #將process_bmp return的raw data存在csv檔案
+#     #np.savetxt(fname='nss_image_summary.csv',X=summary,fmt='%s',delimiter=',')
 
-    #===========================================================================以下為資料整理
-    df=pd.DataFrame(summary, columns=head)
-    #對每個column轉換成浮點數，沒有辦法轉換的文字則該列跳過不轉換
-    for i in df.columns: 
-        df[i]=df[i].astype(float,errors='ignore')
-    #輸出excel並調整欄寬
-    name_of_wb='nss_image_summary.xlsx'
-    df.to_excel(name_of_wb, sheet_name='sheet1', index=False)
+#     #===========================================================================以下為資料整理
+#     df=pd.DataFrame(summary, columns=head)
+#     #對每個column轉換成浮點數，沒有辦法轉換的文字則該列跳過不轉換
+#     for i in df.columns:
+#         df[i]=df[i].astype(float,errors='ignore')
+#     #輸出excel並調整欄寬
+#     name_of_wb='nss_image_summary.xlsx'
+#     df.to_excel(name_of_wb, sheet_name='sheet1', index=False)
     
-    # from white_paper_tools import auto_fit 
-    auto_fit(name_of_wb=name_of_wb)
+#     # from white_paper_tools import auto_fit 
+#     auto_fit(name_of_wb=name_of_wb)
 
-    os.makedirs('origin_bmp', exist_ok=True) # create folder for original BMP; ignore if exists
-    os.makedirs('origin_png', exist_ok=True) # create folder for original PNG; ignore if exists
+#     os.mkdir('origin_bmp') #建立資料夾給bmp原始檔案日後留存
+#     os.mkdir('origin_png') #建立資料夾給png原始檔案日後留存
 
-    #將原始BMP檔案搬到名為'origin_bmp'的資料夾中，png檔案搬到'origin_png'資料夾
+#     #將原始BMP檔案搬到名為'origin_bmp'的資料夾中，png檔案搬到'origin_png'資料夾
 
-    result = [f for f in os.listdir(mypath) if os.path.isfile(os.path.join(mypath, f))]#找到當前資料夾中的檔案名稱和資料夾名稱(無路徑)
+#     result = [f for f in os.listdir(mypath) if os.path.isfile(os.path.join(mypath, f))]#找到當前資料夾中的檔案名稱和資料夾名稱(無路徑)
 
-    bmp_list=[i for i in result if fnmatch.fnmatch(i, '*.bmp')] #bmp檔案
-    png_list=[i for i in result if fnmatch.fnmatch(i, '*.png')] #png檔案
+#     bmp_list=[i for i in result if fnmatch.fnmatch(i, '*.bmp')] #bmp檔案
+#     png_list=[i for i in result if fnmatch.fnmatch(i, '*.png')] #png檔案
 
-    for i in bmp_list:
-        file_source=mypath+'//'+i
-        file_destination=mypath+'//origin_bmp'
-        shutil.move(file_source, file_destination)
+#     for i in bmp_list:
+#         file_source=mypath+'//'+i
+#         file_destination=mypath+'//origin_bmp'
+#         shutil.move(file_source, file_destination)
 
-    for i in png_list:
-        file_source=mypath+'//'+i
-        file_destination=mypath+'//origin_png'
-        shutil.move(file_source, file_destination)
+#     for i in png_list:
+#         file_source=mypath+'//'+i
+#         file_destination=mypath+'//origin_png'
+#         shutil.move(file_source, file_destination)
 
-# --- Added: Streamlit UI wrapper (does not modify your analysis functions) ---
-def streamlit_app():
-    import streamlit as st
+# if __name__=='__main__':
+#     main()
 
-    st.title("NSS EDGE Image Quality Analysis (Streamlit)")
 
-    tab_api, tab_local = st.tabs(["API Query", "Local BMP Analysis"])
+# --- Configuration ---
+# Set the top-level directory the app is allowed to browse.
+# Use an absolute path that exists on the server where Streamlit runs.
+ROOT_DIR = Path("/data/nss_bmps").resolve()
 
-    with tab_api:
-        st.subheader("Query via API parameters")
-        oper = st.text_input("oper", value="5350")
-        waferid = st.text_input("waferid", value="VAC94AA0101")
-        bevel = st.text_input("bevel", value="EDU")
-        nssfile = st.text_input(
-            "nssfile",
-            value=r"//temfile300.tem.memc.com/rawdata$/SPX/EBIN_Photos/2024-09/2024-09-24/300RXM06/VAC94AA01@01@20240924005514@300RXM06@EDU_2.7z",
-        )
-        api_base = st.text_input("API Base", value="http://167.170.129.190:8507/nssra/")
+# --- Helpers ---
+def safe_join(root: Path, subpath: str) -> Path:
+    """Resolve subpath under root and ensure it stays inside root (no path traversal)."""
+    p = (root / subpath).resolve()
+    if not str(p).startswith(str(root)):
+        raise ValueError("Access outside of ROOT_DIR is not allowed.")
+    return p
 
-        if st.button("Send API Request"):
-            try:
-                params = {"oper": oper, "waferid": waferid, "bevel": bevel, "nssfile": nssfile}
-                r = requests.get(api_base, params=params, timeout=60)
-                r.raise_for_status()
-                data = r.json()
-                st.success("API call succeeded")
-                st.json(data)
+def list_dir(path: Path):
+    """Return (dirs, files) for a directory, filtering to .bmp for files."""
+    dirs = []
+    files = []
+    for entry in sorted(path.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
+        if entry.is_dir():
+            dirs.append(entry)
+        elif entry.is_file() and entry.suffix.lower() == ".bmp":
+            files.append(entry)
+    return dirs, files
 
-                names = data.get("name", [])
-                rows = data.get("results", [])
-                if names and rows:
-                    df = pd.DataFrame(rows, columns=names)
-                    st.dataframe(df, use_container_width=True)
+# --- UI ---
+st.set_page_config(page_title="NSS BMP Processor", layout="wide")
 
-                    # Offer an Excel download of the result
-                    buf = io.BytesIO()
-                    with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
-                        df.to_excel(writer, index=False, sheet_name="results")
-                    st.download_button(
-                        "Download as Excel",
-                        data=buf.getvalue(),
-                        file_name=f"nssra_{waferid}_{bevel}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    )
-            except Exception as e:
-                st.error(f"API call failed: {e}")
+st.title("NSS BMP Processor (server-side)")
 
-    with tab_local:
-        st.subheader("Analyze a local BMP (uses existing process_bmp)")
-        bmp = st.file_uploader("Upload raw NSS BMP", type=["bmp"])
-        if bmp is not None:
-            with tempfile.TemporaryDirectory() as td:
-                bmp_path = os.path.join(td, bmp.name)
-                with open(bmp_path, "wb") as f:
-                    f.write(bmp.read())
+# Show and allow change of relative path inside ROOT_DIR
+st.caption(f"Root: `{ROOT_DIR}` (server-side)")
 
-                st.info("Analyzing…")
-                res = process_bmp(bmp_path)
-                if not res:
-                    st.error("Analysis failed or the file format is not supported.")
-                else:
-                    head=['filename','Ra_raw','RawQ50','RawQ90','RawQ99','Ra_mv','MvQ50','MvQ90','MvQ99']
-                    df = pd.DataFrame([res], columns=head)
-                    st.dataframe(df, use_container_width=True)
+# Keep a navigation stack in session state
+if "relpath" not in st.session_state:
+    st.session_state.relpath = ""
 
-                    # Show generated images if present
-                    out_png = os.path.join(td, os.path.splitext(os.path.basename(bmp_path))[0] + ".png")
-                    if os.path.exists(out_png):
-                        st.image(out_png, caption="Reconstructed wafer image with overlay", use_column_width=True)
+col_nav, col_go = st.columns([3, 1])
+with col_nav:
+    relpath = st.text_input(
+        "Browse within root (relative path):",
+        value=st.session_state.relpath,
+        help="Enter a subdirectory relative to ROOT_DIR."
+    )
+with col_go:
+    go = st.button("Go")
 
-                    out_chart = os.path.join(td, os.path.splitext(os.path.basename(bmp_path))[0] + "_360chart.jpg")
-                    if os.path.exists(out_chart):
-                        st.image(out_chart, caption="Per-degree Ra chart", use_column_width=True)
+# Apply navigation
+try:
+    current_dir = safe_join(ROOT_DIR, relpath)
+except Exception as e:
+    st.error(str(e))
+    current_dir = ROOT_DIR
+    relpath = ""
+if go:
+    st.session_state.relpath = relpath
 
-                    # Offer an Excel download for the single result
-                    buf = io.BytesIO()
-                    with pd.ExcelWriter(buf, engine="xlsxwriter") as writer:
-                        df.to_excel(writer, sheet_name="result", index=False)
-                    st.download_button(
-                        "Download result (Excel)",
-                        data=buf.getvalue(),
-                        file_name=f"nss_local_{os.path.basename(bmp_path)}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    )
+# Breadcrumbs
+parts = [""] + [p for p in Path(st.session_state.relpath).parts if p not in ("/",)]
+crumb = ROOT_DIR
+st.write("**Path:** ", end=" ")
+st.write(f"`{current_dir}`")
 
-if __name__=='__main__':
-    # If launched by Streamlit, start the UI; otherwise run the original batch flow.
-    try:
-        import streamlit as st
-        if getattr(st, "_is_running_with_streamlit", False):
-            streamlit_app()
+# Directory listing
+if not current_dir.exists() or not current_dir.is_dir():
+    st.warning("Directory does not exist or is not a folder.")
+else:
+    dirs, files = list_dir(current_dir)
+
+    left, right = st.columns(2)
+    with left:
+        st.subheader("Folders")
+        if current_dir != ROOT_DIR:
+            if st.button("⬆️ Up one level"):
+                st.session_state.relpath = str(Path(st.session_state.relpath).parent).replace("\\", "/")
+                st.experimental_rerun()
+
+        for d in dirs:
+            if st.button(f"📁 {d.name}", key=f"dir_{d}"):
+                new_rel = str(Path(st.session_state.relpath) / d.name).replace("\\", "/")
+                st.session_state.relpath = new_rel
+                st.experimental_rerun()
+
+    with right:
+        st.subheader("BMP files")
+        if files:
+            # Let user select one BMP
+            file_labels = [f.name for f in files]
+            choice = st.selectbox("Select a BMP file:", file_labels, index=0)
+            chosen_file = files[file_labels.index(choice)]
+
+            st.write(f"**Selected:** `{chosen_file}`")
+            run = st.button("Process selected BMP")
+
+            if run:
+                with st.spinner("Processing on server..."):
+                    try:
+                        # Call your existing analyzer directly on the server path
+                        result = process_bmp(str(chosen_file))
+                        st.success("Done.")
+
+                        # Show numeric results if available
+                        if isinstance(result, list) and result:
+                            st.write("**Summary:**")
+                            # Expecting: [filename, Ra_raw, RawQ50, RawQ90, RawQ99, Ra_mv, MvQ50, MvQ90, MvQ99]
+                            st.dataframe(
+                                {
+                                    "Metric": [
+                                        "File", "Ra_raw", "RawQ50", "RawQ90", "RawQ99",
+                                        "Ra_mv", "MvQ50", "MvQ90", "MvQ99"
+                                    ][:len(result)],
+                                    "Value": result
+                                }
+                            )
+
+                        # Try to display artifacts your script writes next to the BMP
+                        out_base = chosen_file.with_suffix("")
+                        png_whole = out_base.with_suffix(".png")
+                        chart_360 = Path(chosen_file.parent, f"{chosen_file.stem}_360chart.jpg")
+
+                        imgs = []
+                        if png_whole.exists():
+                            imgs.append(("Whole wafer PNG", str(png_whole)))
+                        if chart_360.exists():
+                            imgs.append(("360 chart", str(chart_360)))
+
+                        if imgs:
+                            st.subheader("Generated images")
+                            for title, path in imgs:
+                                st.markdown(f"**{title}**")
+                                st.image(path, use_column_width=True)
+                        else:
+                            st.info("No images found to display (check your output paths).")
+
+                    except Exception as e:
+                        st.error(f"Processing failed: {e}")
         else:
-            main()
-    except Exception:
-        main()
+            st.info("No .bmp files found in this folder.")
+
+st.divider()

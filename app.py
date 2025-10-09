@@ -659,8 +659,8 @@ def breadcrumb_parts(relpath_str: str):
     return list(Path(relpath_str).parts)
 
 # ===================== UI =========================
-st.set_page_config(page_title="NSS BMP Processor", layout="wide")
-st.title("NSS BMP Processor (Server-side Browser)")
+st.set_page_config(page_title="NSS Edge Image", layout="wide")
+st.title("NSS Edge Image")
 st.caption(f"Root (server): `{ROOT_DIR}`")
 
 # Session state: current relative path, selection

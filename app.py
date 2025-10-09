@@ -583,78 +583,104 @@ def rename_move_rawdata():
 
 
 
-app = FastAPI()
+ROOT_DIR = r"\\temfile300.tem.memc.com\rawdata$"
 
-class JobIn(BaseModel):
-    zip_path: str
+st.set_page_config(page_title="NSS Edge Image", layout="wide")
+st.title("NSS Edge Image")
 
-@app.post("/process_zip")
-def process_zip(job: JobIn):
-    zip_path = job.zip_path
-    if not (os.path.exists(zip_path) and zip_path.lower().endswith(".zip")):
-        return {"ok": False, "error": "ZIP not found or invalid"}
+st.caption(
+    "Pick a **.zip** from the server. The app will extract BMPs to a temp folder on the server, "
+    "run your analysis, and produce an Excel summary + PNG outputs next to the temp job folder."
+)
 
-    with tempfile.TemporaryDirectory(prefix="nss_zip_") as workdir:
-        outdir = os.path.join(workdir, "outputs")
-        os.makedirs(outdir, exist_ok=True)
+# File browser limited to ZIPs under ROOT_DIR
+event = st_file_browser(
+    ROOT_DIR,
+    key="fs",
+    show_choose_file=True,           # show a “Choose” button
+    show_download_file=False,        # keep data on server
+    extentions=["zip"],              # only show .zip
+    glob_patterns="**/*.zip",        # match nested ZIPs
+)
 
-        bmp_paths = []
-        with zipfile.ZipFile(zip_path) as zf:
-            for info in zf.infolist():
-                if info.filename.lower().endswith(".bmp"):
-                    zf.extract(info, workdir)
-                    bmp_paths.append(os.path.join(workdir, info.filename))
+# The component returns a dict describing user actions.
+# Print it in dev to learn its exact shape in your environment.
+with st.expander("Debug event payload (optional)"):
+    st.write(event)
 
-        if not bmp_paths:
-            return {"ok": False, "error": "No BMPs in ZIP"}
-
-        rows = []
-        for bmp in bmp_paths:
-            try:
-                row = nss.process_bmp(bmp)
-                if row:
-                    rows.append(row)
-            except Exception as e:
-                rows.append([bmp, f"ERROR: {e}"])
-
-        cols = ['filename','Ra_raw','RawQ50','RawQ90','RawQ99','Ra_mv','MvQ50','MvQ90','MvQ99']
-        df = pd.DataFrame(rows, columns=cols)
-        excel_path = os.path.join(outdir, "nss_image_summary.xlsx")
-        df.to_excel(excel_path, index=False)
-
-        try:
-            auto_fit(excel_path)
-        except Exception:
-            pass
-
-        return {"ok": True, "excel_path": excel_path, "workdir": workdir}
-
-
-
-API_URL = "http://127.0.0.1:8000/process_zip"  # adjust for your deployment
-ROOT_DIR = r"C:"
-
-st.title("NSS Edge")
-
-event = st_file_browser(ROOT_DIR, key="fs", show_choose_file=True,
-                        show_download_file=False, extentions=["zip"], glob_patterns="**/*.zip")
-
+# Try to get a selected filepath from the event payload
 selected_zip = None
 if event and isinstance(event, dict):
-    if "path" in event and event.get("event") == "file_selected":
+    # Components may return selected item(s) in different keys.
+    # These branches cover common shapes seen in the component.
+    if "path" in event and isinstance(event["path"], str) and event.get("event") == "file_selected":
         selected_zip = event["path"]
     elif "selected" in event and event["selected"]:
+        # Sometimes it's a list of dicts with 'path' keys
         maybe_item = event["selected"][0]
         if isinstance(maybe_item, dict) and "path" in maybe_item:
             selected_zip = maybe_item["path"]
 
+st.markdown("---")
+
 if selected_zip:
     st.success(f"Selected ZIP: `{selected_zip}`")
-    if st.button("Submit to FastAPI"):
-        r = requests.post(API_URL, json={"zip_path": selected_zip}, timeout=300)
-        res = r.json()
-        if not res.get("ok"):
-            st.error(res.get("error", "Unknown error"))
-        else:
-            st.write(f"Excel: {res['excel_path']}")
-            st.info(f"Working dir (server): {res['workdir']}")
+
+    if st.button("Process ZIP on server", type="primary"):
+        # Create a unique working directory on the server
+        with tempfile.TemporaryDirectory(prefix="nss_zip_") as workdir:
+            outdir = os.path.join(workdir, "outputs")
+            os.makedirs(outdir, exist_ok=True)
+
+            # Extract only BMPs to the working directory
+            bmp_paths = []
+            with zipfile.ZipFile(selected_zip) as zf:
+                for info in zf.infolist():
+                    if info.filename.lower().endswith(".bmp"):
+                        zf.extract(info, workdir)
+                        bmp_paths.append(os.path.join(workdir, info.filename))
+
+            if not bmp_paths:
+                st.error("No BMP files found inside the ZIP.")
+                st.stop()
+
+            # Run your existing analyzer per BMP without modifying your code
+            # process_bmp returns: [filename, Ra_raw, RawQ50, RawQ90, RawQ99, Ra_mv, MvQ50, MvQ90, MvQ99]
+            rows = []
+            for bmp in bmp_paths:
+                try:
+                    row = nss.process_bmp(bmp)
+                    if row:
+                        rows.append(row)
+                except Exception as e:
+                    st.warning(f"Failed on {os.path.basename(bmp)}: {e}")
+
+            if not rows:
+                st.error("Processing finished but no results were produced.")
+                st.stop()
+
+            # Build summary DataFrame and save Excel (using your column names)
+            cols = ['filename','Ra_raw','RawQ50','RawQ90','RawQ99','Ra_mv','MvQ50','MvQ90','MvQ99']
+            df = pd.DataFrame(rows, columns=cols)
+
+            summary_xlsx = os.path.join(outdir, "nss_image_summary.xlsx")
+            df.to_excel(summary_xlsx, index=False)
+
+            # Try your auto_fit helper if available (does nothing if it errors)
+            try:
+                nss.auto_fit(summary_xlsx)
+            except Exception as e:
+                st.info(f"auto_fit skipped: {e}")
+
+            # Surface results in the UI
+            st.subheader("Summary")
+            st.dataframe(df, use_container_width=True)
+            st.download_button(
+                "Download Excel summary",
+                data=open(summary_xlsx, "rb").read(),
+                file_name="nss_image_summary.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
+            st.success(f"Done. Working directory (server): {workdir}")
+            st.caption("Note: Images (PNG charts/crops) were written to the working directory during processing.")

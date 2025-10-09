@@ -596,7 +596,7 @@ st.caption(
 
 event = st_file_browser(
     ROOT_DIR,
-    key="fs",
+    # key="fs",
     show_choose_file=True,
     show_download_file=False,
     # extentions=["zip"],

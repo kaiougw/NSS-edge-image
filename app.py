@@ -585,6 +585,22 @@ def rename_move_rawdata():
 
 ROOT_DIR = r"C:/"
 
+# --- quick diagnostics ---
+st.subheader("Quick path diagnostics")
+from pathlib import Path
+try:
+    root = Path(ROOT_DIR)
+    st.write({
+        "ROOT_DIR": str(ROOT_DIR),
+        "exists": root.exists(),
+        "is_dir": root.is_dir(),
+        "listdir_sample": [p.name for p in list(root.iterdir())[:10] if p.exists()],
+        "sample_zip_count": len(list(root.rglob("*.zip"))[:10]),
+    })
+except Exception as e:
+    st.error(f"Path check failed: {e}")
+
+
 st.set_page_config(page_title="NSS Edge Image", layout="wide")
 st.title("NSS Edge Image")
 

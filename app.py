@@ -632,7 +632,7 @@ def rename_move_rawdata():
 #     main()
 
 # ===================== Config =====================
-ROOT_DIR = Path("/data/nss_bmps").resolve()  # set your server root here
+ROOT_DIR = Path(r"M:\EDL").resolve()  # set your server root here
 
 # ===================== Helpers ====================
 def safe_join(root: Path, subpath: Path) -> Path:

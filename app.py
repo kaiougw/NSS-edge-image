@@ -680,7 +680,7 @@ except Exception as e:
 # -------- Breadcrumb bar (clickable, no text input) --------
 crumb_cols = st.columns(max(1, len(breadcrumb_parts(st.session_state.relpath)) + 1))
 # Root button
-if crumb_cols[0].button("🏠 Root", key="crumb_root"):
+if crumb_cols[0].button("Root", key="crumb_root"):
     st.session_state.relpath = ""
     st.rerun()
 

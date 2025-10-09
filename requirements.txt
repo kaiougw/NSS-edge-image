@@ -8,3 +8,4 @@ py7zr
 xlsxwriter
 openpyxl
 streamlit_file_browser
+fastapi

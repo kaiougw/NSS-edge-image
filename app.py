@@ -583,7 +583,7 @@ def rename_move_rawdata():
 
 
 
-ROOT_DIR = r"C:/"
+ROOT_DIR = r"OS/"
 
 # --- quick diagnostics ---
 st.subheader("Quick path diagnostics")
@@ -612,7 +612,7 @@ event = st_file_browser(
     # key="fs",
     show_choose_file=True,
     show_download_file=False,
-    # extentions=["zip"],
+    extentions=["zip"],
     # glob_patterns="**/*.zip",
 )
 

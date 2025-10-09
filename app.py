@@ -583,7 +583,7 @@ def rename_move_rawdata():
 
 
 
-ROOT_DIR = r"C:\\"
+ROOT_DIR = r"C:/"
 
 st.set_page_config(page_title="NSS Edge Image", layout="wide")
 st.title("NSS Edge Image")

@@ -24,6 +24,9 @@ import tempfile
 from streamlit_file_browser import st_file_browser
 import subprocess
 import re
+from fastapi import FastAPI
+import requests
+from pydantic import BaseModel
 from typing import List, Tuple
 import traceback
 
@@ -580,199 +583,78 @@ def rename_move_rawdata():
 
 
 
-def _run(cmd: List[str]) -> str:
-    """Run a command and return stdout (text) or empty string on error."""
-    try:
-        out = subprocess.run(cmd, capture_output=True, text=True, shell=False)
-        return out.stdout if out.returncode == 0 else ""
-    except Exception:
-        return ""
+app = FastAPI()
 
-def discover_windows_servers() -> List[str]:
-    """Use 'net view' to enumerate visible Windows SMB servers."""
-    output = _run(["net", "view"])
-    servers = []
-    for line in output.splitlines():
-        m = re.match(r"\s*\\\\([A-Za-z0-9._-]+)\b", line)
-        if m:
-            servers.append(m.group(1))
-    return sorted(set(servers))
+class JobIn(BaseModel):
+    zip_path: str
 
-def list_windows_shares(server: str) -> List[str]:
-    """List shares on a server using 'net view \\\\SERVER'."""
-    output = _run(["net", "view", f"\\\\{server}"])
-    shares = []
-    for line in output.splitlines():
-        m = re.match(r"\s*([A-Za-z0-9$._-]+)\s+(Disk|Print|IPC)", line, re.IGNORECASE)
-        if m:
-            shares.append(m.group(1))
-    return sorted(set(shares))
+@app.post("/process_zip")
+def process_zip(job: JobIn):
+    zip_path = job.zip_path
+    if not (os.path.exists(zip_path) and zip_path.lower().endswith(".zip")):
+        return {"ok": False, "error": "ZIP not found or invalid"}
 
-def connect_share(server: str, share: str, username: str, password: str, domain: str | None = None) -> Tuple[bool, str]:
-    """
-    Optionally connect to a share using 'net use \\\\server\\share /user:DOMAIN\\user password'.
-    Prefer running Streamlit under a service account with access and skipping this.
-    """
-    target = f"\\\\{server}\\{share}"
-    user_spec = f"{domain}\\{username}" if domain else username
-    try:
-        subprocess.run(["net", "use", target, "/delete", "/y"], capture_output=True, text=True)
-        out = subprocess.run(["net", "use", target, "/user:"+user_spec, password], capture_output=True, text=True)
-        ok = out.returncode == 0
-        msg = out.stdout if ok else (out.stderr or out.stdout)
-        return ok, msg
-    except Exception as e:
-        return False, str(e)
+    with tempfile.TemporaryDirectory(prefix="nss_zip_") as workdir:
+        outdir = os.path.join(workdir, "outputs")
+        os.makedirs(outdir, exist_ok=True)
 
+        bmp_paths = []
+        with zipfile.ZipFile(zip_path) as zf:
+            for info in zf.infolist():
+                if info.filename.lower().endswith(".bmp"):
+                    zf.extract(info, workdir)
+                    bmp_paths.append(os.path.join(workdir, info.filename))
 
+        if not bmp_paths:
+            return {"ok": False, "error": "No BMPs in ZIP"}
 
-# Configuration
-ROOT_DIR = r"\\temfile300.tem.memc.com"
+        rows = []
+        for bmp in bmp_paths:
+            try:
+                row = nss.process_bmp(bmp)
+                if row:
+                    rows.append(row)
+            except Exception as e:
+                rows.append([bmp, f"ERROR: {e}"])
 
-st.set_page_config(page_title="NSS Edge Image", layout="wide")
-st.title("NSS Edge Image")
+        cols = ['filename','Ra_raw','RawQ50','RawQ90','RawQ99','Ra_mv','MvQ50','MvQ90','MvQ99']
+        df = pd.DataFrame(rows, columns=cols)
+        excel_path = os.path.join(outdir, "nss_image_summary.xlsx")
+        df.to_excel(excel_path, index=False)
 
-st.caption("Pick a **.zip** from the server. The app will extract .bmp files.")
+        try:
+            nss.auto_fit(excel_path)
+        except Exception:
+            pass
+
+        return {"ok": True, "excel_path": excel_path, "workdir": workdir}
 
 
 
-st.subheader("Choose a network location")
+API_URL = "http://127.0.0.1:8000/process_zip"  # adjust for your deployment
+ROOT_DIR = r"\\temfile300.tem.memc.com\rawdata$"
 
-servers = discover_windows_servers()
-if not servers:
-    st.info("No servers discovered via 'net view'. If discovery is restricted, use the manual UNC fallback below.")
-server = st.selectbox("Server", options=["<Select>"] + servers, index=0)
+st.title("NSS Edge")
 
-share = None
-if server and server != "<Select>":
-    shares = list_windows_shares(server)
-    if shares:
-        share = st.selectbox("Share", options=["<Select>"] + shares, index=0)
-    else:
-        st.warning(f"No shares visible on \\\\{server}. You may need credentials or permissions.")
+event = st_file_browser(ROOT_DIR, key="fs", show_choose_file=True,
+                        show_download_file=False, extentions=["zip"], glob_patterns="**/*.zip")
 
-with st.expander("Authentication (optional)"):
-    col1, col2 = st.columns(2)
-    with col1:
-        use_auth = st.checkbox("Connect with credentials", value=False)
-        domain = st.text_input("Domain (optional)", value="")
-        username = st.text_input("Username", value="")
-    with col2:
-        password = st.text_input("Password", value="", type="password")
-        st.caption("Credentials are used only to issue a one-off 'net use' to the selected share.")
-    if use_auth and server and share and server != "<Select>" and share != "<Select>":
-        if st.button("Connect now"):
-            ok, msg = connect_share(server, share, username=username, password=password, domain=(domain or None))
-            if ok:
-                st.success("Connected.")
-            else:
-                st.error(f"Connect failed: {msg}")
-
-resolved_root_dir = None
-if server and share and server != "<Select>" and share != "<Select>":
-    resolved_root_dir = fr"\\{server}\{share}"
-    st.caption(f"Browsing root: `{resolved_root_dir}`")
-
-with st.expander("Or enter a UNC path manually (fallback)"):
-    manual_unc = st.text_input("UNC path (e.g. \\\\temfile300.tem.memc.com\\rawdata$)", value="")
-    if manual_unc:
-        resolved_root_dir = manual_unc
-        st.caption(f"Browsing root (manual): `{resolved_root_dir}`")
-
-# Store for later use and to avoid editing your existing ROOT_DIR definition
-if resolved_root_dir:
-    st.session_state["resolved_root_dir"] = resolved_root_dir
-
-
-# File browser limited to ZIPs under ROOT_DIR
-event = st_file_browser(
-    ROOT_DIR,
-    key="fs",
-    show_choose_file=True,
-    show_download_file=False,
-    extentions=["zip"],
-    glob_patterns="**/*.zip",
-)
-
-ROOT_DIR = st.session_state.get("resolved_root_dir", ROOT_DIR)
-
-
-# with st.expander("Debug event payload (optional)"):
-#     st.write(event)
-
-# Try to get a selected filepath from the event payload
 selected_zip = None
 if event and isinstance(event, dict):
-    # Components may return selected item(s) in different keys.
-    # These branches cover common shapes seen in the component.
-    if "path" in event and isinstance(event["path"], str) and event.get("event") == "file_selected":
+    if "path" in event and event.get("event") == "file_selected":
         selected_zip = event["path"]
     elif "selected" in event and event["selected"]:
-        # Sometimes it's a list of dicts with 'path' keys
         maybe_item = event["selected"][0]
         if isinstance(maybe_item, dict) and "path" in maybe_item:
             selected_zip = maybe_item["path"]
 
-st.markdown("---")
-
 if selected_zip:
     st.success(f"Selected ZIP: `{selected_zip}`")
-
-    if st.button("Process ZIP on server", type="primary"):
-        # Create a unique working directory on the server
-        with tempfile.TemporaryDirectory(prefix="nss_zip_") as workdir:
-            outdir = os.path.join(workdir, "outputs")
-            os.makedirs(outdir, exist_ok=True)
-
-            # Extract only BMPs to the working directory
-            bmp_paths = []
-            with zipfile.ZipFile(selected_zip) as zf:
-                for info in zf.infolist():
-                    if info.filename.lower().endswith(".bmp"):
-                        zf.extract(info, workdir)
-                        bmp_paths.append(os.path.join(workdir, info.filename))
-
-            if not bmp_paths:
-                st.error("No BMP files found inside the ZIP.")
-                st.stop()
-
-            # Run your existing analyzer per BMP without modifying your code
-            # process_bmp returns: [filename, Ra_raw, RawQ50, RawQ90, RawQ99, Ra_mv, MvQ50, MvQ90, MvQ99]
-            rows = []
-            for bmp in bmp_paths:
-                try:
-                    row = process_bmp(bmp)
-                    if row:
-                        rows.append(row)
-                except Exception as e:
-                    st.warning(f"Failed on {os.path.basename(bmp)}: {e}")
-
-            if not rows:
-                st.error("Processing finished but no results were produced.")
-                st.stop()
-
-            # Build summary DataFrame and save Excel (using your column names)
-            cols = ['filename','Ra_raw','RawQ50','RawQ90','RawQ99','Ra_mv','MvQ50','MvQ90','MvQ99']
-            df = pd.DataFrame(rows, columns=cols)
-
-            summary_xlsx = os.path.join(outdir, "nss_image_summary.xlsx")
-            df.to_excel(summary_xlsx, index=False)
-
-            # Try your auto_fit helper if available (does nothing if it errors)
-            try:
-                auto_fit(summary_xlsx)
-            except Exception as e:
-                st.info(f"auto_fit skipped: {e}")
-
-            # Surface results in the UI
-            st.subheader("Summary")
-            st.dataframe(df, use_container_width=True)
-            st.download_button(
-                "Download Excel summary",
-                data=open(summary_xlsx, "rb").read(),
-                file_name="nss_image_summary.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-
-            st.success(f"Done. Working directory (server): {workdir}")
-            st.caption("Note: Images (PNG charts/crops) were written to the working directory during processing.")
+    if st.button("Submit to FastAPI"):
+        r = requests.post(API_URL, json={"zip_path": selected_zip}, timeout=300)
+        res = r.json()
+        if not res.get("ok"):
+            st.error(res.get("error", "Unknown error"))
+        else:
+            st.write(f"Excel (server): {res['excel_path']}")
+            st.info(f"Working dir (server): {res['workdir']}")

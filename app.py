@@ -583,15 +583,12 @@ def rename_move_rawdata():
 
 
 
-ROOT_DIR = r"C:"
+ROOT_DIR = r"C:\\"
 
 st.set_page_config(page_title="NSS Edge Image", layout="wide")
 st.title("NSS Edge Image")
 
-st.caption(
-    "Pick a **.zip** from the server. The app will extract BMPs to a temp folder on the server, "
-    "run your analysis, and produce an Excel summary + PNG outputs next to the temp job folder."
-)
+st.caption("Pick a **.zip** from the server. The app will extract .bmp files.")
 
 
 event = st_file_browser(

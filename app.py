@@ -623,7 +623,7 @@ def process_zip(job: JobIn):
         df.to_excel(excel_path, index=False)
 
         try:
-            nss.auto_fit(excel_path)
+            auto_fit(excel_path)
         except Exception:
             pass
 

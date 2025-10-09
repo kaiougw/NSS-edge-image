@@ -593,14 +593,14 @@ st.caption(
     "run your analysis, and produce an Excel summary + PNG outputs next to the temp job folder."
 )
 
-# File browser limited to ZIPs under ROOT_DIR
+
 event = st_file_browser(
     ROOT_DIR,
     key="fs",
-    show_choose_file=True,           # show a “Choose” button
-    show_download_file=False,        # keep data on server
-    extentions=["zip"],              # only show .zip
-    glob_patterns="**/*.zip",        # match nested ZIPs
+    show_choose_file=True,
+    show_download_file=False,
+    # extentions=["zip"],
+    # glob_patterns="**/*.zip",
 )
 
 # The component returns a dict describing user actions.

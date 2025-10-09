@@ -588,16 +588,14 @@ st.caption("Pick a **.zip** from the server. The app will extract .bmp files.")
 event = st_file_browser(
     ROOT_DIR,
     key="fs",
-    show_choose_file=True,           # show a “Choose” button
-    show_download_file=False,        # keep data on server
-    extentions=["zip"],              # only show .zip
-    glob_patterns="**/*.zip",        # match nested ZIPs
+    show_choose_file=True,
+    show_download_file=False,
+    extentions=["zip"],
+    glob_patterns="**/*.zip",
 )
 
-# The component returns a dict describing user actions.
-# Print it in dev to learn its exact shape in your environment.
-with st.expander("Debug event payload (optional)"):
-    st.write(event)
+# with st.expander("Debug event payload (optional)"):
+#     st.write(event)
 
 # Try to get a selected filepath from the event payload
 selected_zip = None

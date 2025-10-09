@@ -659,10 +659,10 @@ def list_dir(path: Path):
 # --- UI ---
 st.set_page_config(page_title="NSS BMP Processor", layout="wide")
 
-st.title("NSS BMP Processor (server-side)")
+st.title("NSS Edge Image")
 
 # Show and allow change of relative path inside ROOT_DIR
-st.caption(f"Root: `{ROOT_DIR}` (server-side)")
+st.caption(f"Root: `{ROOT_DIR}`")
 
 # Keep a navigation stack in session state
 if "relpath" not in st.session_state:

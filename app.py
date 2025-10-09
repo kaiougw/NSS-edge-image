@@ -632,7 +632,7 @@ def process_zip(job: JobIn):
 
 
 API_URL = "http://127.0.0.1:8000/process_zip"  # adjust for your deployment
-ROOT_DIR = r"\\temfile300.tem.memc.com\rawdata$"
+ROOT_DIR = r"C:"
 
 st.title("NSS Edge")
 
@@ -656,5 +656,5 @@ if selected_zip:
         if not res.get("ok"):
             st.error(res.get("error", "Unknown error"))
         else:
-            st.write(f"Excel (server): {res['excel_path']}")
+            st.write(f"Excel: {res['excel_path']}")
             st.info(f"Working dir (server): {res['workdir']}")

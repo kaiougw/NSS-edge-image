@@ -707,8 +707,8 @@ def find_bmps(root: Path):
 # UI
 # =========================
 
-st.set_page_config(page_title="NSS Edge Image", layout="wide")
-st.title("NSS Edge Image")
+st.set_page_config(page_title="Server ZIP Processor", layout="wide")
+st.title("Server-side ZIP Browser & NSS Processor (no upload)")
 
 # Choose a root to browse
 root_names = list(ROOTS.keys())
@@ -722,7 +722,7 @@ if "relpath" not in st.session_state:
     st.session_state.relpath = ""
 
 # Optional quick jump
-with st.expander("Quick jump (optional)"):
+with st.expander("Quick jump"):
     jump_to = st.text_input(
         "Enter subfolder relative to the selected root:",
         value=st.session_state.relpath,

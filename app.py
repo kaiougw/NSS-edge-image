@@ -764,8 +764,9 @@ def pick_root_dir():
 
     return root if root and Path(root.replace("/", os.sep)).exists() else None
 
-    if ROOT_DIR:
-    # Use the component; try the spelling your build expects: "extensions" or "extentions"
+ROOT_DIR = pick_root_dir()
+
+if ROOT_DIR:
     browse = st_file_browser(
         ROOT_DIR,
         key="fs",

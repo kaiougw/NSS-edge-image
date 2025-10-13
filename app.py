@@ -580,7 +580,7 @@ def rename_move_rawdata():
         shutil.move(file_source, file_destination)
 
 
-ROOT_DIR = r"\\temfile300.tem.memc.com\rawdata$"
+ROOT_DIR = r"H:"
 
 # ROOT_DIR = r"\\C:"
 

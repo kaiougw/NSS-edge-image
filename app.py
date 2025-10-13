@@ -24,9 +24,7 @@ import tempfile
 from streamlit_file_browser import st_file_browser
 import subprocess
 import re
-from fastapi import FastAPI
 import requests
-from pydantic import BaseModel
 from typing import List, Tuple
 import traceback
 
@@ -582,29 +580,13 @@ def rename_move_rawdata():
         shutil.move(file_source, file_destination)
 
 
-
-ROOT_DIR = r"C:\\nss_data"
-
-# --- quick diagnostics ---
-st.subheader("Quick path diagnostics")
-from pathlib import Path
-try:
-    root = Path(ROOT_DIR)
-    st.write({
-        "ROOT_DIR": str(ROOT_DIR),
-        "exists": root.exists(),
-        "is_dir": root.is_dir(),
-        "listdir_sample": [p.name for p in list(root.iterdir())[:10] if p.exists()],
-        "sample_zip_count": len(list(root.rglob("*.zip"))[:10]),
-    })
-except Exception as e:
-    st.error(f"Path check failed: {e}")
+ROOT_DIR = r"\\\\temfile300.tem.memc.com"
 
 
 st.set_page_config(page_title="NSS Edge Image", layout="wide")
 st.title("NSS Edge Image")
 
-st.caption("Pick a **.zip** from the server. The app will extract .bmp files.")
+st.caption("Pick a **.zip** file. The app will extract .bmp files.")
 
 
 event = st_file_browser(
@@ -613,23 +595,14 @@ event = st_file_browser(
     show_choose_file=True,
     show_download_file=False,
     extentions=["zip"],
-    # glob_patterns="**/*.zip",
+    glob_patterns="**/*.zip",
 )
 
-# The component returns a dict describing user actions.
-# Print it in dev to learn its exact shape in your environment.
-with st.expander("Debug event payload (optional)"):
-    st.write(event)
-
-# Try to get a selected filepath from the event payload
 selected_zip = None
 if event and isinstance(event, dict):
-    # Components may return selected item(s) in different keys.
-    # These branches cover common shapes seen in the component.
     if "path" in event and isinstance(event["path"], str) and event.get("event") == "file_selected":
         selected_zip = event["path"]
     elif "selected" in event and event["selected"]:
-        # Sometimes it's a list of dicts with 'path' keys
         maybe_item = event["selected"][0]
         if isinstance(maybe_item, dict) and "path" in maybe_item:
             selected_zip = maybe_item["path"]
@@ -637,15 +610,13 @@ if event and isinstance(event, dict):
 st.markdown("---")
 
 if selected_zip:
-    st.success(f"Selected ZIP: `{selected_zip}`")
+    st.success(f"Selected .zip file: `{selected_zip}`")
 
-    if st.button("Process ZIP on server", type="primary"):
-        # Create a unique working directory on the server
+    if st.button("Process", type="primary"):
         with tempfile.TemporaryDirectory(prefix="nss_zip_") as workdir:
             outdir = os.path.join(workdir, "outputs")
             os.makedirs(outdir, exist_ok=True)
 
-            # Extract only BMPs to the working directory
             bmp_paths = []
             with zipfile.ZipFile(selected_zip) as zf:
                 for info in zf.infolist():
@@ -654,11 +625,9 @@ if selected_zip:
                         bmp_paths.append(os.path.join(workdir, info.filename))
 
             if not bmp_paths:
-                st.error("No BMP files found inside the ZIP.")
+                st.error("No .bmp files found inside the .zip file.")
                 st.stop()
 
-            # Run your existing analyzer per BMP without modifying your code
-            # process_bmp returns: [filename, Ra_raw, RawQ50, RawQ90, RawQ99, Ra_mv, MvQ50, MvQ90, MvQ99]
             rows = []
             for bmp in bmp_paths:
                 try:
@@ -672,20 +641,17 @@ if selected_zip:
                 st.error("Processing finished but no results were produced.")
                 st.stop()
 
-            # Build summary DataFrame and save Excel (using your column names)
             cols = ['filename','Ra_raw','RawQ50','RawQ90','RawQ99','Ra_mv','MvQ50','MvQ90','MvQ99']
             df = pd.DataFrame(rows, columns=cols)
 
             summary_xlsx = os.path.join(outdir, "nss_image_summary.xlsx")
             df.to_excel(summary_xlsx, index=False)
 
-            # Try your auto_fit helper if available (does nothing if it errors)
             try:
                 auto_fit(summary_xlsx)
             except Exception as e:
                 st.info(f"auto_fit skipped: {e}")
 
-            # Surface results in the UI
             st.subheader("Summary")
             st.dataframe(df, use_container_width=True)
             st.download_button(
@@ -695,5 +661,5 @@ if selected_zip:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
 
-            st.success(f"Done. Working directory (server): {workdir}")
-            st.caption("Note: Images (PNG charts/crops) were written to the working directory during processing.")
+            st.success(f"Done.")
+            st.caption("Note: Images were written to the working directory during processing.")

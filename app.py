@@ -670,16 +670,52 @@ def rename_move_rawdata():
 
 
 
+def detect_local_drives():
+    """Return existing local/rooted drive paths like ['C:/', 'D:/']."""
+    drives = []
+    for letter in string.ascii_uppercase:
+        root = f"{letter}:/"
+        if os.path.exists(root):
+            drives.append(root)
+    return drives
 
-
-# drive_picker_ui.py
-# Streamlit UI to select a root from Local Drives, Mapped Drives, or UNC path.
-# After picking, you can pass ROOT_DIR to st_file_browser.
-
-import os
-from pathlib import Path
-import streamlit as st
-from windows_drives import detect_local_drives, detect_mapped_drives
+def detect_mapped_drives():
+    """
+    Return a list of mapped network drives like ['Z:/', 'M:/'] by querying PowerShell.
+    If PowerShell isn't available, falls back to parsing 'net use'.
+    """
+    mapped = []
+    try:
+        # PowerShell: list FileSystem drives; filter IsNetwork
+        ps_script = r"""
+        Get-PSDrive -PSProvider FileSystem |
+        Where-Object { $_.DisplayRoot -and $_.Root -match '^[A-Z]:\\$' } |
+        Select-Object -ExpandProperty Root
+        """
+        out = subprocess.check_output(
+            ["powershell", "-NoProfile", "-Command", ps_script],
+            stderr=subprocess.STDOUT,
+            text=True
+        )
+        for line in out.splitlines():
+            line = line.strip()
+            if len(line) == 3 and line[1] == ":" and line[2] == "\\":
+                mapped.append(line.replace("\\", "/"))
+    except Exception:
+        # Fallback: parse 'net use'
+        try:
+            out = subprocess.check_output(["net", "use"], stderr=subprocess.STDOUT, text=True, shell=True)
+            for line in out.splitlines():
+                parts = line.split()
+                if parts and len(parts[0]) == 2 and parts[0][1] == ":":
+                    mapped.append((parts[0] + "\\").replace("\\", "/"))
+        except Exception:
+            pass
+    # Normalize to X:/ form
+    mapped = [d if d.endswith("/") else (d + "/") for d in mapped]
+    # Ensure the drive exists
+    mapped = [d for d in mapped if os.path.exists(d)]
+    return sorted(set(mapped))
 
 def pick_root_dir():
     """Render a small UI and return a ROOT_DIR string normalized to forward slashes, or None."""
@@ -727,3 +763,18 @@ def pick_root_dir():
             st.info("If this is a mapped drive, ensure the app runs under the same user context that created the mapping. Otherwise prefer UNC.")
 
     return root if root and Path(root.replace("/", os.sep)).exists() else None
+
+    if ROOT_DIR:
+    # Use the component; try the spelling your build expects: "extensions" or "extentions"
+    browse = st_file_browser(
+        ROOT_DIR,
+        key="fs",
+        show_choose_file=True,
+        show_download_file=True,
+        # extensions=["zip"],   # some builds
+        extentions=["zip"],     # others use this older spelling
+    )
+    with st.expander("Debug event payload (optional)"):
+        st.write(browse)
+else:
+    st.info("Pick a valid drive / mapped drive / UNC path to begin.")

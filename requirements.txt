@@ -1,11 +1,11 @@
 streamlit
-matplotlib
-opencv-python-headless
-numpy
 pandas
+numpy
+opencv-python
+matplotlib
 scipy
+openpyxl
 py7zr
 xlsxwriter
 openpyxl
 streamlit_file_browser
-fastapi

@@ -595,19 +595,23 @@ event = st_file_browser(
     ROOT_DIR,
     key="fs",
     show_choose_file=True,
-    show_download_file=False,
+    show_download_file=True, # enable/disable file download
     # extentions=["zip"],
     # glob_patterns="**/*.zip",
 )
 
 selected_zip = None
 if event and isinstance(event, dict):
+    # if user selects a file, "path" key is used to direcly retrieve the file location
+    # "path" key in "event" dictionary is only available when user clicks on a file name
     if "path" in event and isinstance(event["path"], str) and event.get("event") == "file_selected":
         selected_zip = event["path"]
+    # if "path" key is not available, "selected" key is used to retrieve the first item in the list of selected files or folders
+    # "selected" key in "event" dictionary is only available when user clicks on the checkbox
     elif "selected" in event and event["selected"]:
-        maybe_item = event["selected"][0]
-        if isinstance(maybe_item, dict) and "path" in maybe_item:
-            selected_zip = maybe_item["path"]
+        checked_item = event["selected"][0]
+        if isinstance(checked_item, dict) and "path" in checked_item:
+            selected_zip = checked_item["path"]
 
 st.markdown("---")
 
@@ -619,11 +623,12 @@ if selected_zip:
             outdir = os.path.join(workdir, "outputs")
             os.makedirs(outdir, exist_ok=True)
 
+            # extract .bmp files from the selected .zip
             bmp_paths = []
             with zipfile.ZipFile(selected_zip) as zf:
                 for info in zf.infolist():
                     if info.filename.lower().endswith(".bmp"):
-                        zf.extract(info, workdir)
+                        zf.extract(info, workdir) # extract to working directory
                         bmp_paths.append(os.path.join(workdir, info.filename))
 
             if not bmp_paths:
@@ -648,16 +653,12 @@ if selected_zip:
 
             summary_xlsx = os.path.join(outdir, "nss_image_summary.xlsx")
             df.to_excel(summary_xlsx, index=False)
-
-            try:
-                auto_fit(summary_xlsx)
-            except Exception as e:
-                st.info(f"auto_fit skipped: {e}")
+            auto_fit(summary_xlsx)
 
             st.subheader("Summary")
             st.dataframe(df, use_container_width=True)
             st.download_button(
-                "Download Excel summary",
+                "Download",
                 data=open(summary_xlsx, "rb").read(),
                 file_name="nss_image_summary.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

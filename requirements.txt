@@ -2,7 +2,6 @@ streamlit
 pandas
 numpy
 opencv-python
-cv2
 matplotlib
 scipy
 py7zr

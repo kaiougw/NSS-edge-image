@@ -577,9 +577,9 @@ st.title("NSS Edge Image")
 st.caption("Pick a **.zip** file. The app will extract .bmp files.")
 
 
-network = [f"{d}:/" for d in string.ascii_uppercase if os.path.exists(f"{d}:/")]
-selected_network = st.selectbox("Select a network", network)
-ROOT_DIR = selected_network
+drive = [f"{d}:/" for d in string.ascii_uppercase if os.path.exists(f"{d}:/")]
+selected_drive = st.selectbox("Select a network", drive)
+ROOT_DIR = selected_drive
 
 event = st_file_browser(
     ROOT_DIR,

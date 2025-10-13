@@ -580,7 +580,9 @@ def rename_move_rawdata():
         shutil.move(file_source, file_destination)
 
 
-ROOT_DIR = r"\\temfile300.tem.memc.com\\rawdata$"
+# ROOT_DIR = r"\\temfile300.tem.memc.com\\rawdata$"
+
+ROOT_DIR = r"\\C:"
 
 
 st.set_page_config(page_title="NSS Edge Image", layout="wide")
@@ -594,8 +596,8 @@ event = st_file_browser(
     key="fs",
     show_choose_file=True,
     show_download_file=False,
-    extentions=["zip"],
-    glob_patterns="**/*.zip",
+    # extentions=["zip"],
+    # glob_patterns="**/*.zip",
 )
 
 selected_zip = None

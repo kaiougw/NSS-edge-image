@@ -580,89 +580,150 @@ def rename_move_rawdata():
         shutil.move(file_source, file_destination)
 
 
-ROOT_DIR = r"C:"
 
 # ROOT_DIR = r"C:"
 
-
-st.set_page_config(page_title="NSS Edge Image", layout="wide")
-st.title("NSS Edge Image")
-
-st.caption("Pick a **.zip** file. The app will extract .bmp files.")
+# # ROOT_DIR = r"C:"
 
 
-event = st_file_browser(
-    ROOT_DIR,
-    key="fs",
-    show_choose_file=True,
-    show_download_file=True, # enable/disable file download
-    # extentions=["zip"],
-    # glob_patterns="**/*.zip",
-)
+# st.set_page_config(page_title="NSS Edge Image", layout="wide")
+# st.title("NSS Edge Image")
 
-selected_zip = None
-if event and isinstance(event, dict):
-    # if user selects a file, "path" key is used to direcly retrieve the file location
-    # "path" key in "event" dictionary is only available when user clicks on a file name
-    if "path" in event and isinstance(event["path"], str) and event.get("event") == "file_selected":
-        selected_zip = event["path"]
-    # if "path" key is not available, "selected" key is used to retrieve the first item in the list of selected files or folders
-    # "selected" key in "event" dictionary is only available when user clicks on the checkbox
-    elif "selected" in event and event["selected"]:
-        checked_item = event["selected"][0]
-        if isinstance(checked_item, dict) and "path" in checked_item:
-            selected_zip = checked_item["path"]
+# st.caption("Pick a **.zip** file. The app will extract .bmp files.")
 
-st.markdown("---")
 
-if selected_zip:
-    st.success(f"Selected .zip file: `{selected_zip}`")
+# event = st_file_browser(
+#     ROOT_DIR,
+#     key="fs",
+#     show_choose_file=True,
+#     show_download_file=True, # enable/disable file download
+#     # extentions=["zip"],
+#     # glob_patterns="**/*.zip",
+# )
 
-    if st.button("Process", type="primary"):
-        with tempfile.TemporaryDirectory(prefix="nss_zip_") as workdir:
-            outdir = os.path.join(workdir, "outputs")
-            os.makedirs(outdir, exist_ok=True)
+# selected_zip = None
+# if event and isinstance(event, dict):
+#     # if user selects a file, "path" key is used to direcly retrieve the file location
+#     # "path" key in "event" dictionary is only available when user clicks on a file name
+#     if "path" in event and isinstance(event["path"], str) and event.get("event") == "file_selected":
+#         selected_zip = event["path"]
+#     # if "path" key is not available, "selected" key is used to retrieve the first item in the list of selected files or folders
+#     # "selected" key in "event" dictionary is only available when user clicks on the checkbox
+#     elif "selected" in event and event["selected"]:
+#         checked_item = event["selected"][0]
+#         if isinstance(checked_item, dict) and "path" in checked_item:
+#             selected_zip = checked_item["path"]
 
-            # extract .bmp files from the selected .zip
-            bmp_paths = []
-            with zipfile.ZipFile(selected_zip) as zf:
-                for info in zf.infolist():
-                    if info.filename.lower().endswith(".bmp"):
-                        zf.extract(info, workdir) # extract to working directory
-                        bmp_paths.append(os.path.join(workdir, info.filename))
+# st.markdown("---")
 
-            if not bmp_paths:
-                st.error("No .bmp files found inside the .zip file.")
-                st.stop()
+# if selected_zip:
+#     st.success(f"Selected .zip file: `{selected_zip}`")
 
-            rows = []
-            for bmp in bmp_paths:
-                try:
-                    row = process_bmp(bmp)
-                    if row:
-                        rows.append(row)
-                except Exception as e:
-                    st.warning(f"Failed on {os.path.basename(bmp)}: {e}")
+#     if st.button("Process", type="primary"):
+#         with tempfile.TemporaryDirectory(prefix="nss_zip_") as workdir:
+#             outdir = os.path.join(workdir, "outputs")
+#             os.makedirs(outdir, exist_ok=True)
 
-            if not rows:
-                st.error("Processing finished but no results were produced.")
-                st.stop()
+#             # extract .bmp files from the selected .zip
+#             bmp_paths = []
+#             with zipfile.ZipFile(selected_zip) as zf:
+#                 for info in zf.infolist():
+#                     if info.filename.lower().endswith(".bmp"):
+#                         zf.extract(info, workdir) # extract to working directory
+#                         bmp_paths.append(os.path.join(workdir, info.filename))
 
-            cols = ['filename','Ra_raw','RawQ50','RawQ90','RawQ99','Ra_mv','MvQ50','MvQ90','MvQ99']
-            df = pd.DataFrame(rows, columns=cols)
+#             if not bmp_paths:
+#                 st.error("No .bmp files found inside the .zip file.")
+#                 st.stop()
 
-            summary_xlsx = os.path.join(outdir, "nss_image_summary.xlsx")
-            df.to_excel(summary_xlsx, index=False)
-            auto_fit(summary_xlsx)
+#             rows = []
+#             for bmp in bmp_paths:
+#                 try:
+#                     row = process_bmp(bmp)
+#                     if row:
+#                         rows.append(row)
+#                 except Exception as e:
+#                     st.warning(f"Failed on {os.path.basename(bmp)}: {e}")
 
-            st.subheader("Summary")
-            st.dataframe(df, use_container_width=True)
-            st.download_button(
-                "Download",
-                data=open(summary_xlsx, "rb").read(),
-                file_name="nss_image_summary.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
+#             if not rows:
+#                 st.error("Processing finished but no results were produced.")
+#                 st.stop()
 
-            st.success(f"Done.")
-            st.caption("Images were written to the working directory during processing.")
+#             cols = ['filename','Ra_raw','RawQ50','RawQ90','RawQ99','Ra_mv','MvQ50','MvQ90','MvQ99']
+#             df = pd.DataFrame(rows, columns=cols)
+
+#             summary_xlsx = os.path.join(outdir, "nss_image_summary.xlsx")
+#             df.to_excel(summary_xlsx, index=False)
+#             auto_fit(summary_xlsx)
+
+#             st.subheader("Summary")
+#             st.dataframe(df, use_container_width=True)
+#             st.download_button(
+#                 "Download",
+#                 data=open(summary_xlsx, "rb").read(),
+#                 file_name="nss_image_summary.xlsx",
+#                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+#             )
+
+#             st.success(f"Done.")
+#             st.caption("Images were written to the working directory during processing.")
+
+
+
+
+
+# drive_picker_ui.py
+# Streamlit UI to select a root from Local Drives, Mapped Drives, or UNC path.
+# After picking, you can pass ROOT_DIR to st_file_browser.
+
+import os
+from pathlib import Path
+import streamlit as st
+from windows_drives import detect_local_drives, detect_mapped_drives
+
+def pick_root_dir():
+    """Render a small UI and return a ROOT_DIR string normalized to forward slashes, or None."""
+    st.subheader("Choose source")
+    mode = st.radio(
+        "Browse where?",
+        ["Local Drive", "Mapped Drive", "UNC Path"],
+        horizontal=True
+    )
+
+    root = None
+
+    if mode == "Local Drive":
+        local_drives = detect_local_drives()
+        if not local_drives:
+            st.warning("No local drives detected.")
+            return None
+        drive = st.selectbox("Pick a drive", local_drives)
+        sub = st.text_input("Start folder under the drive (optional)", value="")
+        root = (Path(drive) / sub).as_posix()
+
+    elif mode == "Mapped Drive":
+        mapped = detect_mapped_drives()
+        if not mapped:
+            st.warning("No mapped network drives detected for this user session.")
+            st.info("Tip: mapped drives are per-user; run Streamlit in the same user session that has the mappings.")
+            return None
+        drive = st.selectbox("Pick a mapped drive", mapped)
+        sub = st.text_input("Start folder under the mapped drive (optional)", value="")
+        root = (Path(drive) / sub).as_posix()
+
+    else:  # UNC Path
+        unc = st.text_input(
+            "UNC path (e.g. \\\\server\\share or \\\\temfile300.tem.memc.com\\rawdata$\\EDL)",
+            value="\\\\temfile300.tem.memc.com\\rawdata$"
+        )
+        # Normalize to forward slashes for browser component friendliness
+        root = unc.replace("\\", "/")
+
+    # Show quick diagnostics
+    if root:
+        p = Path(root.replace("/", os.sep))
+        st.write({"ROOT_DIR": root, "exists": p.exists(), "is_dir": p.is_dir()})
+        if not p.exists():
+            st.info("If this is a mapped drive, ensure the app runs under the same user context that created the mapping. Otherwise prefer UNC.")
+
+    return root if root and Path(root.replace("/", os.sep)).exists() else None

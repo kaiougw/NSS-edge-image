@@ -580,7 +580,7 @@ def rename_move_rawdata():
         shutil.move(file_source, file_destination)
 
 
-ROOT_DIR = r"\\\\temfile300.tem.memc.com\rawdata$"
+ROOT_DIR = r"\\temfile300.tem.memc.com\rawdata$"
 
 
 st.set_page_config(page_title="NSS Edge Image", layout="wide")
@@ -662,4 +662,4 @@ if selected_zip:
             )
 
             st.success(f"Done.")
-            st.caption("Note: Images were written to the working directory during processing.")
+            st.caption("Images were written to the working directory during processing.")

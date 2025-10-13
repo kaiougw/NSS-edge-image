@@ -1,8 +1,9 @@
 streamlit
+streamlit-file-browser
 pandas
 numpy
-opencv-python
 matplotlib
 scipy
+opencv-python
+openpyxl
 py7zr
-streamlit_file_browser

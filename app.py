@@ -579,17 +579,15 @@ def rename_move_rawdata():
         file_destination=mypath
         shutil.move(file_source, file_destination)
 
-
-drives = [f"{d}:/" for d in string.ascii_uppercase if os.path.exists(f"{d}:/")]
-selected_drive = st.selectbox("Select a drive", drives)
-ROOT_DIR = selected_drive
-
-
 st.set_page_config(page_title="NSS Edge Image", layout="wide")
 st.title("NSS Edge Image")
 
 st.caption("Pick a **.zip** file. The app will extract .bmp files.")
 
+
+network = [f"{d}:/" for d in string.ascii_uppercase if os.path.exists(f"{d}:/")]
+selected_network = st.selectbox("Select a network", network)
+ROOT_DIR = selected_network
 
 event = st_file_browser(
     ROOT_DIR,

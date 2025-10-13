@@ -9,3 +9,4 @@ xlsxwriter
 openpyxl
 streamlit_file_browser
 fastapi
+windows_drives

@@ -580,9 +580,9 @@ def rename_move_rawdata():
         shutil.move(file_source, file_destination)
 
 
-ROOT_DIR = r"H:"
+ROOT_DIR = r"C:"
 
-# ROOT_DIR = r"\\C:"
+# ROOT_DIR = r"C:"
 
 
 st.set_page_config(page_title="NSS Edge Image", layout="wide")

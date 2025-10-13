@@ -580,10 +580,9 @@ def rename_move_rawdata():
         shutil.move(file_source, file_destination)
 
 
-
-ROOT_DIR = r"C:"
-
-# ROOT_DIR = r"C:"
+drives = [f"{d}:/" for d in string.ascii_uppercase if os.path.exists(f"{d}:/")]
+selected_drive = st.selectbox("Select a drive", drives)
+ROOT_DIR = selected_drive
 
 
 st.set_page_config(page_title="NSS Edge Image", layout="wide")

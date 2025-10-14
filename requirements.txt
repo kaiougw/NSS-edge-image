@@ -3,6 +3,7 @@ streamlit-file-browser
 pandas
 numpy
 matplotlib
+opencv-python
 scipy
 openpyxl
 py7zr

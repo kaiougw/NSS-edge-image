@@ -110,7 +110,7 @@ def convert_nss_rawimage(img_file):
                 res_l=x
                 break       
         
-        res=np.max([res_u,res_l]) # tkae upper or lower detected position as notch position
+        res=np.max([res_u,res_l]) # take upper or lower detected position as notch position
         
         if res>0: # if notch is found, proceed to reconstruct image and slice image into two parts 
             end_1=int((img_v.shape[0]-res)/1038)-2
@@ -577,7 +577,7 @@ st.title("NSS Edge Image")
 st.caption("Pick a **.zip** file. The app will extract .bmp files.")
 
 
-network = [f"{n}:/" for n in string.ascii_uppercase if os.path.exists(f"{n}:/")]
+network = [f"{d}:/" for d in ["H", "M", "Z"] if os.path.exists(f"{d}:/")]
 selected_network = st.selectbox("Select a network", network)
 ROOT_DIR = selected_network
 
@@ -585,7 +585,7 @@ event = st_file_browser(
     ROOT_DIR,
     key="fs",
     show_choose_file=True,
-    show_download_file=True, # enable/disable file download
+    show_download_file=False, # enable/disable file download
     # extentions=["zip"],
     # glob_patterns="**/*.zip",
 )

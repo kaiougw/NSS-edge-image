@@ -309,7 +309,7 @@ def process_bmp0(bmpfile):
 
         return [img_file, Ra, Q50, Q90, Q95]
 
-def process_bmp(bmpfile):
+def process_bmp(bmpfile: str, save_images: bool = False):
     # print(bmpfile)
     f = bmpfile
     nss_img_path = os.path.dirname(bmpfile) + '/'

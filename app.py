@@ -46,7 +46,6 @@ def auto_fit(name_of_wb=''):  # Input: Excel file name
                 ws.column_dimensions[letter].width = (max_width + 2) * 1.2
         wb.save(name_of_wb)
 
-
 def moving_average(x, w):
     """
     Input:
@@ -54,7 +53,6 @@ def moving_average(x, w):
         w: window size (integer)
     """
     return np.convolve(x, np.ones(w), 'valid') / w
-
 
 def rolling_window(a, window):
     """
@@ -65,7 +63,6 @@ def rolling_window(a, window):
     shape = a.shape[:-1] + (a.shape[-1] - window + 1, window)
     strides = a.strides + (a.strides[-1],)
     return np.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)
-
 
 def find_nonblack(npy1d, threshold):
     """
@@ -82,7 +79,6 @@ def find_nonblack(npy1d, threshold):
             res = p
             break
     return res
-
 
 def convert_nss_rawimage(img_file):
     """
@@ -140,7 +136,6 @@ def convert_nss_rawimage(img_file):
         print("Invalid Image.")
         return np.array([])
 
-
 def turning_points(array):
     '''
     Finds the turning points within an 1D array and returns the indices of the minimum and
@@ -177,7 +172,6 @@ def turning_points(array):
             begin = i
             ps = s
     return idx_min, idx_max
-
 
 def process_bmp0(bmpfile):
     """
@@ -313,7 +307,6 @@ def process_bmp0(bmpfile):
             cv2.imwrite(tmp_dir + '/' + str(int(i)) + '.png', img_v0)
 
         return [img_file, Ra, Q50, Q90, Q95]
-
 
 def process_bmp(bmpfile):
     # print(bmpfile)
@@ -497,7 +490,6 @@ def process_bmp(bmpfile):
     #    print('Execption...')
     #    return []
 
-
 def decompress():
     # 獲取當前目錄
     mypath = os.path.dirname(os.path.realpath(__file__))
@@ -542,7 +534,6 @@ def decompress():
         file_destination = mypath
         shutil.move(file_source, file_destination)
 
-
 def rename_move_rawdata():
     # 獲取當前目錄
     mypath = os.path.dirname(os.path.realpath(__file__))
@@ -579,10 +570,9 @@ st.title("NSS Edge Image")
 
 st.caption("Upload a **.zip** file. The app will extract .bmp files.")
 
-uploaded = st.file_uploader("Choose a .zip", type=["zip"], accept_multiple_files=False)
+uploaded = st.file_uploader("Choose a .zip", type=["zip"], accept_multiple_files=False, label_visibility="collapsed")
 
 if uploaded:
-    st.success(f"Selected .zip file: `{uploaded.name}`")
     if st.button("Process", type="primary"):
         with tempfile.TemporaryDirectory(prefix="nss_zip_") as workdir:
             outdir = os.path.join(workdir, "outputs")

@@ -10,15 +10,11 @@ import string
 import zipfile, tempfile
 from pathlib import Path
 import cv2
-
-
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import scipy.signal
 import streamlit as st
-from streamlit_file_browser import st_file_browser
 
 import py7zr
 
@@ -606,7 +602,7 @@ if uploaded:
             rows = []
             for bmp in bmp_paths:
                 try:
-                    row = process_bmp(bmp)  # use your existing function
+                    row = process_bmp(bmp)
                     if row:
                         rows.append(row)
                 except Exception as e:

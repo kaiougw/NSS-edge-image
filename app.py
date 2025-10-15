@@ -314,6 +314,9 @@ def process_bmp(bmpfile):
     nss_img_path = os.path.dirname(bmpfile) + '/'
     img_file = bmpfile  # './/P1276BM//' + f + '.png'
     img_v = convert_nss_rawimage(img_file)
+    if img_v.size == 0:
+        print(f"Skipping {img_file}: notch not found or invalid.")
+        return []
 
     # print(nss_img_path + os.path.basename(bmpfile)[:-4])
     # row stdev 1038
@@ -572,6 +575,9 @@ st.caption("Upload a **.zip** file. The app will extract .bmp files.")
 
 uploaded = st.file_uploader("Choose a .zip", type=["zip"], accept_multiple_files=False, label_visibility="collapsed")
 
+save_images = st.checkbox("Save full wafer & peak crops (heavy I/O & memory)", value=False, help="Disable to avoid large PNGs and many crop files during batch processing.")
+max_files = st.number_input("Max BMPs to process", min_value=1, value=5, step=1, help="Limit processing batch size to control memory usage.")
+
 if uploaded:
     if st.button("Process", type="primary"):
         with tempfile.TemporaryDirectory(prefix="nss_zip_") as workdir:
@@ -589,20 +595,38 @@ if uploaded:
                 st.error("No .bmp files found inside the .zip file.")
                 st.stop()
 
+            bmp_paths = bmp_paths[: int(max_files)]
             rows = []
-            for bmp in bmp_paths:
+            progress = st.progress(0.0)
+            status = st.empty()
+
+            for i, bmp in enumerate(bmp_paths, 1):
                 try:
-                    row = process_bmp(bmp)
+                    status.write(f"Processing {os.path.basename(bmp)} ({i}/{len(bmp_paths)}) ...")
+                    row = process_bmp(bmp, save_images=save_images)
                     if row:
                         rows.append(row)
                 except Exception as e:
                     st.warning(f"Failed on {os.path.basename(bmp)}: {e}")
+                finally:
+                    gc.collect()
+                    progress.progress(i / len(bmp_paths))
 
             if not rows:
                 st.error("Processing finished but no results were produced.")
                 st.stop()
 
-            cols = ['filename','Ra_raw','RawQ50','RawQ90','RawQ99','Ra_mv','MvQ50','MvQ90','MvQ99']
+            cols = [
+                "filename",
+                "Ra_raw",
+                "RawQ50",
+                "RawQ90",
+                "RawQ99",
+                "Ra_mv",
+                "MvQ50",
+                "MvQ90",
+                "MvQ99",
+            ]
             df = pd.DataFrame(rows, columns=cols)
 
             summary_xlsx = os.path.join(outdir, "nss_image_summary.xlsx")
@@ -611,10 +635,11 @@ if uploaded:
 
             st.subheader("Summary")
             st.dataframe(df, use_container_width=True)
-            st.download_button(
-                "Download",
-                data=open(summary_xlsx, "rb").read(),
-                file_name="nss_image_summary.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
+            with open(summary_xlsx, "rb") as fh:
+                st.download_button(
+                    "Download",
+                    data=fh.read(),
+                    file_name="nss_image_summary.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
             st.success("Done.")

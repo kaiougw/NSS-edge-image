@@ -8,6 +8,7 @@ import os
 import shutil
 import string
 import zipfile, tempfile
+import gc
 from pathlib import Path
 import cv2
 import numpy as np

@@ -6,10 +6,8 @@ from __future__ import annotations
 
 import os
 import shutil
-import string
 import zipfile
 import tempfile
-from pathlib import Path
 import cv2
 import numpy as np
 import pandas as pd
@@ -18,7 +16,6 @@ import scipy.signal
 import streamlit as st
 import py7zr
 import gc
-
 
 # 功能: 讀取指定的excel，並將欄寬自動最佳化 (Automatically adjust column widths in Excel)
 # 使用方式: 先指定name_of_wb為想要自動化的workbook檔案名稱
@@ -221,12 +218,11 @@ def process_bmp0(bmpfile):
         res4 = find_nonblack(col4, th_)
         res5 = find_nonblack(col5, th_)
         res6 = find_nonblack(col6, th_)
-        # <<< guard against no valid indices
-        candidates = [r for r in [res1, res2, res3, res4, res5, res6] if r >= 0]  # <<<
-        if not candidates:  # <<<
-            print('Invalid NSS bmp file...!')  # <<<
-            return []  # <<<
-        res = np.min(candidates)  # <<<
+        candidates = [r for r in [res1, res2, res3, res4, res5, res6] if r >= 0]
+        if not candidates:
+            print('Invalid NSS bmp file...!')
+            return []
+        res = np.min(candidates)
         c1 = res + 10
         c2 = res + 230
         img_v0 = img_v[c1:c2, 10000:10500]
@@ -235,7 +231,7 @@ def process_bmp0(bmpfile):
         # plt.clf()
 
         # column stdev
-        a0 = np.std(img_v[c1:c2, :].astype(np.float32), axis=0)  # <<< cast to float32 to reduce memory
+        a0 = np.std(img_v[c1:c2, :].astype(np.float32), axis=0)
         x = np.arange(0, a0.shape[0])
 
         # row stdev 1038
@@ -324,9 +320,8 @@ def process_bmp0(bmpfile):
             img_v0 = img_v[:, int((i - 0.1) * 1038):int((i + 2) * 1038)]
             cv2.imwrite(tmp_dir + '/' + str(int(i)) + '.png', img_v0)
 
-        # <<< free large arrays to reduce peak memory
-        del img_v, a0, a01, a02, rpt_360, a_360_x, a_360_y  # <<<
-        gc.collect()  # <<<
+        del img_v, a0, a01, a02, rpt_360, a_360_x, a_360_y
+        gc.collect()
 
         return [img_file, Ra, Q50, Q90, Q95]
 
@@ -345,10 +340,10 @@ def process_bmp(bmpfile):
     img_file = bmpfile  # './/P1276BM//' + f + '.png'
     img_v = convert_nss_rawimage(img_file)
 
-    # <<< early exit if conversion failed to avoid attribute access on empty arrays
-    if img_v.size == 0:  # <<<
-        print('Invalid NSS bmp file...!')  # <<<
-        return []  # <<<
+    # early exit if conversion failed to avoid attribute access on empty arrays
+    if img_v.size == 0:
+        print('Invalid NSS bmp file...!')
+        return []
 
     # print(nss_img_path + os.path.basename(bmpfile)[:-4])
     # row stdev 1038
@@ -373,12 +368,12 @@ def process_bmp(bmpfile):
         res4 = find_nonblack(col4, th_)
         res5 = find_nonblack(col5, th_)
         res6 = find_nonblack(col6, th_)
-        # <<< guard against no valid indices
-        candidates = [r for r in [res1, res2, res3, res4, res5, res6] if r >= 0]  # <<<
-        if not candidates:  # <<<
-            print('Invalid NSS bmp file...!')  # <<<
-            return []  # <<<
-        res = np.min(candidates)  # <<<
+        # guard against no valid indices
+        candidates = [r for r in [res1, res2, res3, res4, res5, res6] if r >= 0]
+        if not candidates:
+            print('Invalid NSS bmp file...!')
+            return []
+        res = np.min(candidates)
         c1 = res + 10
         c2 = res + 230
         # img_v0=img_v[c1:c2,10000:10500]
@@ -387,9 +382,9 @@ def process_bmp(bmpfile):
         # plt.clf()
 
         # column stdev
-        roi = img_v[c1:c2, :].astype(np.float32)  # <<< cast to float32 to reduce memory
-        a0_0 = np.max(roi, axis=0) - np.min(roi, axis=0)  # <<< use roi
-        a0_1 = np.std(roi, axis=0)  # <<< use roi
+        roi = img_v[c1:c2, :].astype(np.float32)  # cast to float32 to reduce memory
+        a0_0 = np.max(roi, axis=0) - np.min(roi, axis=0)
+        a0_1 = np.std(roi, axis=0)
         x = np.arange(0, a0_1.shape[0])
 
         # a01_0=a0_0-np.mean(a0_0)  #1038
@@ -526,9 +521,9 @@ def process_bmp(bmpfile):
                 img_v0 = img_v[:, int((i - 0.3) * mv_sdev_window_1):int((i + 1.6) * mv_sdev_window_1)]
                 cv2.imwrite(tmp_dir + '/' + str(int(i)) + '.png', img_v0)
 
-        # <<< free large arrays to reduce peak memory
-        del img_v, roi, a0_0, a0_1, a01_0, a01_1, a02_0, a02_1, rpt_360, a_360_x, a_360_y0, a_360_y1  # <<<
-        gc.collect()  # <<<
+        # free large arrays to reduce peak memory
+        del img_v, roi, a0_0, a0_1, a01_0, a01_1, a02_0, a02_1, rpt_360, a_360_x, a_360_y0, a_360_y1
+        gc.collect()
 
         return [img_file, Ra_0, Q50_0, Q90_0, Q99_0, Ra_1, Q50_1, Q90_1, Q99_1]
         # else:
@@ -613,11 +608,38 @@ def rename_move_rawdata():
 st.set_page_config(page_title="NSS Edge Image", layout="wide")
 st.title("NSS Edge Image")
 
-network = [f"{d}:/" for d in ["H", "M", "Z"] if os.path.exists(f"{d}:/")]  # network drives limited to H:, M:, Z:
+network = [f"{d}:/".replace("/", os.sep) for d in ["H", "M", "Z"] if os.path.exists(f"{d}:/".replace("/", os.sep))]  # network drives limited to H:, M:, Z:
+
+typed_path = st.text_input("Enter a file path", value=st.session_state.get("typed_path", ""), label_visibility="collapsed", placeholder="Enter a file path", key="typed_path")
+path_override = None
+if isinstance(typed_path, str) and typed_path.strip():
+    tp = typed_path.strip().replace("/", os.sep)
+    tp = os.path.normpath(tp) # remove redundant .. or / and normalize path
+
+    drive, _ = os.path.splitdrive(tp) # extract drive
+    if drive:
+        drive_root = os.path.join(drive + ":", "")
+        if os.path.exists(drive_root):
+            st.session_state["selected_network"] = drive_root # auto-select the drive in `selected_network` selectbox based on user input
+
+    try: # check if path include "EDL" or "EDU" as first folder, then auto-select
+        after_drive = tp[len(drive + os.sep):] if drive else tp
+        folder1 = after_drive.split(os.sep)[0] if after_drive else ""
+        if folder1 in ("EDL", "EDU"):
+            st.session_state["selected_folder"] = folder1
+    except Exception:
+        pass
+
+    if os.path.isdir(tp):
+        path_override = tp
+
+path_selection = st.empty()
 selected_network = st.selectbox("Select a file path", network, key="selected_network", label_visibility="collapsed", index=None, placeholder="Select a network drive")
 if not isinstance(selected_network, str):
     st.stop()
 ROOT = selected_network
+
+path_selection.markdown(f"`{ROOT}`")
 
 selected_folder = False
 if isinstance(selected_network, str) and selected_network.startswith(("M", "Z")): # M: and Z: drives contain raw data
@@ -626,14 +648,19 @@ if isinstance(selected_network, str) and selected_network.startswith(("M", "Z"))
         st.stop()
     ROOT = os.path.join(selected_network, selected_folder)
 
+path_selection.markdown(f"`{ROOT}`")
+
 selected_zip = False
 if isinstance(ROOT, str):
-    current_path = ROOT
+    current_path = path_override or ROOT
     level = 0
     while True: # keep looping and go down each folder until a .zip file is found
         try:
             with os.scandir(current_path) as it:
                 dirs = sorted([e.name for e in it if e.is_dir()])
+
+                path_selection.markdown(f"`{current_path}`")
+
         except FileNotFoundError:
             st.error("Path not found.")
             st.stop()
@@ -642,11 +669,14 @@ if isinstance(ROOT, str):
             zips = sorted([e.name for e in it if e.is_file() and e.name.lower().endswith(".zip")])
 
         if zips:
-            st.caption("Select a **.zip** file. The app will extract .bmp files.")
-            selected_zip_name = st.selectbox("Select a .zip file", zips, key=f"zip_select_{current_path}", index=None, placeholder="Select a .zip file")
+            selected_zip_name = st.selectbox("Select a **.zip** file. The .bmp file will be extracted.", zips, key=f"zip_select_{current_path}", index=None, placeholder="Select a .zip file")
             if not isinstance(selected_zip_name, str):
                 st.stop()
+
             selected_zip = os.path.join(current_path, selected_zip_name)
+
+            path_selection.markdown(f"`{selected_zip}`")
+
             break  # done navigating; proceed to processing
 
         if len(dirs) == 0: # if no folders or .zip files are found
@@ -657,7 +687,7 @@ if isinstance(ROOT, str):
             only = dirs[0]
             current_path = os.path.join(current_path, only)
         else:
-            selected_dir = st.selectbox(f"Select a folder", dirs, key=f"dir_select_level_{level}", index=None, placeholder="Select a folder")
+            selected_dir = st.selectbox("Select a folder", dirs, key=f"dir_select_level_{level}", label_visibility="collapsed", index=None, placeholder="Select a folder")
             if not isinstance(selected_dir, str):
                 st.stop()
             current_path = os.path.join(current_path, selected_dir)

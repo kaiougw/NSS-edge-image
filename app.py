@@ -47,7 +47,6 @@ def auto_fit(name_of_wb=''):  # Input: Excel file name
                 ws.column_dimensions[letter].width = (max_width + 2) * 1.2
         wb.save(name_of_wb)
 
-
 def moving_average(x, w):
     """
     Input:
@@ -55,7 +54,6 @@ def moving_average(x, w):
         w: window size (integer)
     """
     return np.convolve(x, np.ones(w), 'valid') / w
-
 
 def rolling_window(a, window):
     """
@@ -66,7 +64,6 @@ def rolling_window(a, window):
     shape = a.shape[:-1] + (a.shape[-1] - window + 1, window)
     strides = a.strides + (a.strides[-1],)
     return np.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)
-
 
 def find_nonblack(npy1d, threshold):
     """
@@ -80,12 +77,13 @@ def find_nonblack(npy1d, threshold):
     # plt.plot(col)
     # plt.plot(peaks ,col[peaks],'o')
     # plt.show()
+    res = -1
+    peaks = scipy.signal.find_peaks_cwt(npy1d, 10)
     for p in peaks:
         if npy1d[p] >= threshold:
             res = p
             break
     return res
-
 
 def convert_nss_rawimage(img_file):
     """
@@ -147,7 +145,6 @@ def convert_nss_rawimage(img_file):
         print("Invalid Image.")
         return np.array([])
 
-
 def turning_points(array):
     '''
     Finds the turning points within an 1D array and returns the indices of the minimum and
@@ -184,7 +181,6 @@ def turning_points(array):
             begin = i
             ps = s
     return idx_min, idx_max
-
 
 def process_bmp0(bmpfile):
     """
@@ -334,8 +330,15 @@ def process_bmp0(bmpfile):
 
         return [img_file, Ra, Q50, Q90, Q95]
 
-
 def process_bmp(bmpfile):
+    """
+    Process a BMP file to analyze wafer edge image, compute roughness, and generate related charts and CSV files.
+
+    Input:
+        bmpfile: path to the BMP image file (string)
+    Output:
+        List containing analysis results
+    """
     # print(bmpfile)
     f = bmpfile
     nss_img_path = os.path.dirname(bmpfile) + '/'
@@ -532,7 +535,6 @@ def process_bmp(bmpfile):
     #    print('Execption...')
     #    return []
 
-
 def decompress():
     # 獲取當前目錄
     mypath = os.path.dirname(os.path.realpath(__file__))
@@ -577,7 +579,6 @@ def decompress():
         file_destination = mypath
         shutil.move(file_source, file_destination)
 
-
 def rename_move_rawdata():
     # 獲取當前目錄
     mypath = os.path.dirname(os.path.realpath(__file__))
@@ -612,172 +613,102 @@ def rename_move_rawdata():
 st.set_page_config(page_title="NSS Edge Image", layout="wide")
 st.title("NSS Edge Image")
 
-# st.caption("Select a **.zip** file. The app will extract .bmp files.")
-
-
 network = [f"{d}:/" for d in ["H", "M", "Z"] if os.path.exists(f"{d}:/")]  # network drives limited to H:, M:, Z:
-selected_network = st.selectbox("Select a file path", network, key="selected_network", label_visibility="collapsed",
-                                index=None, placeholder="Select a network drive")
+selected_network = st.selectbox("Select a file path", network, key="selected_network", label_visibility="collapsed", index=None, placeholder="Select a network drive")
 if not isinstance(selected_network, str):
     st.stop()
 ROOT = selected_network
 
 selected_folder = False
-if isinstance(selected_network, str) and selected_network.startswith(("M", "Z")):
-    selected_folder = st.selectbox("Select a folder", ["EDL", "EDU"], label_visibility="collapsed",
-                                   key="selected_folder", index=None, placeholder="Select a folder")
+if isinstance(selected_network, str) and selected_network.startswith(("M", "Z")): # M: and Z: drives contain raw data
+    selected_folder = st.selectbox("Select a folder", ["EDL", "EDU"], key="selected_folder", label_visibility="collapsed", index=None, placeholder="Select a folder")
     if not isinstance(selected_folder, str):
         st.stop()
     ROOT = os.path.join(selected_network, selected_folder)
 
-
-selected_folder = None
-if event and isinstance(event, dict):
-    # # if user selects a file, "path" key is used to direcly retrieve the file location
-    # # "path" key in "event" dictionary is only available when user clicks on a file name
-    # if event.get("event") == "file_selected" and isinstance(event.get("path"), str):
-    # selected_zip = event["path"]
-    # # if "path" key is not available, "selected" key is used to retrieve the first item in the list of selected files or folders
-    # # "selected" key in "event" dictionary is only available when user clicks on the checkbox
-    # elif event.get("selected"):
-    # checked_item = event["selected"][0]
-    # if isinstance(checked_item, dict) and isinstance(checked_item.get("path"),str) and checked_item.get("path").lower().endswith(".zip"):
-    # selected_zip = checked_item["path"]
-    p = event.get("path")
-    if isinstance(p, str) and os.path.isdir(p):
-        selected_folder = p
-    elif event.get("selected"):
-        checked_folder = event["selected"][0]
-        if isinstance(checked_folder, dict) and isinstance(checked_folder.get("path"), str):
-            p = checked_folder["path"]
-            if os.path.isdir(p):
-                selected_folder = p
-
-if "selected_folder" not in st.session_state:
-    st.session_state["selected_folder"] = None
-if selected_folder:
-    st.session_state["selected_folder"] = selected_folder
-else:
-    selected_folder = st.session_state.get("selected_folder")
-
-
-    selected_zip = None  # will be set once a .zip is chosen
-
-    if isinstance(ROOT, str):
-        current_path = ROOT  # start from ROOT (e.g., "M:/EDL")
-        level = 0  # used to make Streamlit widget keys unique and stable
-
-        while True:
-            # List folders and .zip files in the current_path
-            try:
-                with os.scandir(current_path) as it:
-                    dirs = sorted([e.name for e in it if e.is_dir()])
-            except PermissionError:
-                st.error(f"Permission denied: {current_path}")
-                st.stop()
-            except FileNotFoundError:
-                st.error(f"Path not found: {current_path}")
-                st.stop()
-
-            # Re-scan for files (separate scandir so the previous iterator isn't exhausted)
+selected_zip = False
+if isinstance(ROOT, str):
+    current_path = ROOT
+    level = 0
+    while True: # keep looping and go down each folder until a .zip file is found
+        try:
             with os.scandir(current_path) as it:
-                zips = sorted([e.name for e in it if e.is_file() and e.name.lower().endswith(".zip")])
+                dirs = sorted([e.name for e in it if e.is_dir()])
+        except FileNotFoundError:
+            st.error("Path not found.")
+            st.stop()
 
-            # If we see .zip files in the current folder, let the user pick one and break
-            if zips:
-                st.subheader("Select a .zip file")
-                selected_zip_name = st.selectbox(
-                    f"Found {len(zips)} .zip file(s) in: {current_path}",
-                    zips,
-                    key=f"zip_select_{current_path}",
-                    index=None,
-                    placeholder="Select a .zip file"
-                )
-                if not isinstance(selected_zip_name, str):
-                    st.stop()  # wait for user to pick
-                selected_zip = os.path.join(current_path, selected_zip_name)
-                break  # done navigating; proceed to processing
+        with os.scandir(current_path) as it:
+            zips = sorted([e.name for e in it if e.is_file() and e.name.lower().endswith(".zip")])
 
-            # If there are no .zip files here, we must go deeper. Decide whether to auto-skip or ask.
-            if len(dirs) == 0:
-                st.error(f"No subfolders or .zip files found under: {current_path}")
+        if zips:
+            st.caption("Select a **.zip** file. The app will extract .bmp files.")
+            selected_zip_name = st.selectbox("Select a .zip file", zips, key=f"zip_select_{current_path}", index=None, placeholder="Select a .zip file")
+            if not isinstance(selected_zip_name, str):
                 st.stop()
+            selected_zip = os.path.join(current_path, selected_zip_name)
+            break  # done navigating; proceed to processing
 
-            if len(dirs) == 1:
-                # Auto-advance through single-child directories (jump logic)
-                only = dirs[0]
-                # Optional breadcrumb for clarity
-                st.caption(f"Auto-skipping single folder: {os.path.join(current_path, only)}")
-                current_path = os.path.join(current_path, only)
-                # loop again
-            else:
-                # We found a fork (2+ items) → ask the user to choose via selectbox
-                st.subheader("Select a folder")
-                selected_dir = st.selectbox(
-                    f"Choose a folder in: {current_path}",
-                    dirs,
-                    key=f"dir_select_level_{level}",
-                    index=None,
-                    placeholder="Select a folder"
+        if len(dirs) == 0: # if no folders or .zip files are found
+            st.error(f"No .zip files found under: {current_path}")
+            st.stop()
+
+        if len(dirs) == 1: # "auto-skip" folder; if it only contains one folder, automatically proceed to the next folder so that user does not need to select the single folder
+            only = dirs[0]
+            current_path = os.path.join(current_path, only)
+        else:
+            selected_dir = st.selectbox(f"Select a folder", dirs, key=f"dir_select_level_{level}", index=None, placeholder="Select a folder")
+            if not isinstance(selected_dir, str):
+                st.stop()
+            current_path = os.path.join(current_path, selected_dir)
+            level += 1
+
+    if selected_zip:
+        if st.button("Process", type="primary", key="process_selected_zip"):
+            with tempfile.TemporaryDirectory(prefix="nss_zip_") as workdir:
+                outdir = os.path.join(workdir, "outputs")
+                os.makedirs(outdir, exist_ok=True)
+
+                bmp_paths = []
+                with zipfile.ZipFile(selected_zip) as zf:
+                    for info in zf.infolist():
+                        if info.filename.lower().endswith(".bmp"):
+                            zf.extract(info, workdir)
+                            bmp_paths.append(os.path.join(workdir, info.filename))
+
+                if not bmp_paths:
+                    st.error("No .bmp files found inside the .zip file.")
+                    st.stop()
+
+                rows = []
+                for bmp in bmp_paths:
+                    try:
+                        row = process_bmp(bmp)
+                        if row:
+                            rows.append(row)
+                    except Exception as e:
+                        st.warning(f"Failed on {os.path.basename(bmp)}: {e}")
+                    finally:
+                        gc.collect()
+
+                if not rows:
+                    st.error("Processing finished but no results were produced.")
+                    st.stop()
+
+                cols = ['filename', 'Ra_raw', 'RawQ50', 'RawQ90', 'RawQ99', 'Ra_mv', 'MvQ50', 'MvQ90', 'MvQ99']
+                df = pd.DataFrame(rows, columns=cols)
+
+                summary_xlsx = os.path.join(outdir, "nss_image_summary.xlsx")
+                df.to_excel(summary_xlsx, index=False)
+                auto_fit(summary_xlsx)
+
+                st.subheader("Summary")
+                st.dataframe(df, use_container_width=True)
+                st.download_button(
+                    "Download",
+                    data=open(summary_xlsx, "rb").read(),
+                    file_name="nss_image_summary.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
-                if not isinstance(selected_dir, str):
-                    st.stop()  # wait for user to pick
-                current_path = os.path.join(current_path, selected_dir)
-                level += 1
-                # loop until we reach a folder containing .zip files
 
-        # At this point we have selected_zip
-        if selected_zip:
-            st.success(f"Selected .zip file: `{selected_zip}`")
-
-            # Keep the exact same processing behavior as your original code
-            if st.button("Process", type="primary", key="process_selected_zip"):
-                with tempfile.TemporaryDirectory(prefix="nss_zip_") as workdir:
-                    outdir = os.path.join(workdir, "outputs")
-                    os.makedirs(outdir, exist_ok=True)
-
-                    # Extract .bmp files from the selected .zip
-                    bmp_paths = []
-                    with zipfile.ZipFile(selected_zip) as zf:
-                        for info in zf.infolist():
-                            if info.filename.lower().endswith(".bmp"):
-                                # Extract to working directory preserving subfolders if any
-                                zf.extract(info, workdir)
-                                bmp_paths.append(os.path.join(workdir, info.filename))
-
-                    if not bmp_paths:
-                        st.error("No .bmp files found inside the .zip file.")
-                        st.stop()
-
-                    rows = []
-                    for bmp in bmp_paths:
-                        try:
-                            row = process_bmp(bmp)  # uses your existing function
-                            if row:
-                                rows.append(row)
-                        except Exception as e:
-                            st.warning(f"Failed on {os.path.basename(bmp)}: {e}")
-                        finally:
-                            gc.collect()  # proactively free memory after each file
-
-                    if not rows:
-                        st.error("Processing finished but no results were produced.")
-                        st.stop()
-
-                    cols = ['filename', 'Ra_raw', 'RawQ50', 'RawQ90', 'RawQ99', 'Ra_mv', 'MvQ50', 'MvQ90', 'MvQ99']
-                    df = pd.DataFrame(rows, columns=cols)
-
-                    summary_xlsx = os.path.join(outdir, "nss_image_summary.xlsx")
-                    df.to_excel(summary_xlsx, index=False)
-                    auto_fit(summary_xlsx)  # reuse your existing helper
-
-                    st.subheader("Summary")
-                    st.dataframe(df, use_container_width=True)
-                    st.download_button(
-                        "Download",
-                        data=open(summary_xlsx, "rb").read(),
-                        file_name="nss_image_summary.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    )
-
-                    st.success("Done.")
+                st.success("Done.")

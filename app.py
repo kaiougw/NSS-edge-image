@@ -7,8 +7,8 @@ from __future__ import annotations
 import os
 import shutil
 import string
-import zipfile, tempfile
-import gc
+import zipfile
+import tempfile
 from pathlib import Path
 import cv2
 import numpy as np
@@ -16,8 +16,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import scipy.signal
 import streamlit as st
-
 import py7zr
+import gc
 
 
 # 功能: 讀取指定的excel，並將欄寬自動最佳化 (Automatically adjust column widths in Excel)
@@ -47,6 +47,7 @@ def auto_fit(name_of_wb=''):  # Input: Excel file name
                 ws.column_dimensions[letter].width = (max_width + 2) * 1.2
         wb.save(name_of_wb)
 
+
 def moving_average(x, w):
     """
     Input:
@@ -54,6 +55,7 @@ def moving_average(x, w):
         w: window size (integer)
     """
     return np.convolve(x, np.ones(w), 'valid') / w
+
 
 def rolling_window(a, window):
     """
@@ -65,11 +67,14 @@ def rolling_window(a, window):
     strides = a.strides + (a.strides[-1],)
     return np.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)
 
+
 def find_nonblack(npy1d, threshold):
     """
     Input:
         npy1d: 1D array
         threshold: value to compare against (integer)
+    Output:
+        index (int) of the first element >= threshold, or -1 if none
     """
     peaks = scipy.signal.find_peaks_cwt(npy1d, 10)
     # plt.plot(col)
@@ -80,6 +85,7 @@ def find_nonblack(npy1d, threshold):
             res = p
             break
     return res
+
 
 def convert_nss_rawimage(img_file):
     """
@@ -93,17 +99,21 @@ def convert_nss_rawimage(img_file):
     img_v = cv2.imread(img_file, cv2.IMREAD_GRAYSCALE)
     # print(img_v.shape)
 
+    if img_v is None:
+        print("Invalid Image.")
+        return np.array([])
+
     if img_v.shape[0] == 384000 and img_v.shape[1] == 512:
         col_u = img_v[:, 5]  # detection upper notch white spot
         col_l = img_v[:, 507]  # detection lower notch white spot
         res_u = 0
         res_l = 0
 
-        for x, val in enumerate(col_u):  # scan upper column for checked pixel >=254
+        for x, val in enumerate(col_u):  # scan upper column for first pixel >=254
             if val >= 254:
                 res_u = x
                 break
-        for x, val in enumerate(col_l):  # scan lower column for checked pixel >=254
+        for x, val in enumerate(col_l):  # scan lower column for first pixel >=254
             if val >= 254:
                 res_l = x
                 break
@@ -136,6 +146,7 @@ def convert_nss_rawimage(img_file):
     else:
         print("Invalid Image.")
         return np.array([])
+
 
 def turning_points(array):
     '''
@@ -174,6 +185,7 @@ def turning_points(array):
             ps = s
     return idx_min, idx_max
 
+
 def process_bmp0(bmpfile):
     """
     Process a BMP file to analyze wafer edge image, compute roughness, and generate related charts and CSV files.
@@ -188,6 +200,10 @@ def process_bmp0(bmpfile):
     nss_img_path = os.path.dirname(bmpfile) + '/'
     img_file = bmpfile  # './/P1276BM//' + f + '.png'
     img_v = convert_nss_rawimage(img_file)
+
+    if img_v.size == 0:
+        print('Invalid NSS bmp file...!')
+        return []
 
     # print(nss_img_path + os.path.basename(bmpfile)[:-4])
 
@@ -209,7 +225,12 @@ def process_bmp0(bmpfile):
         res4 = find_nonblack(col4, th_)
         res5 = find_nonblack(col5, th_)
         res6 = find_nonblack(col6, th_)
-        res = np.min([res1, res2, res3, res4, res5, res6])
+        # <<< guard against no valid indices
+        candidates = [r for r in [res1, res2, res3, res4, res5, res6] if r >= 0]  # <<<
+        if not candidates:  # <<<
+            print('Invalid NSS bmp file...!')  # <<<
+            return []  # <<<
+        res = np.min(candidates)  # <<<
         c1 = res + 10
         c2 = res + 230
         img_v0 = img_v[c1:c2, 10000:10500]
@@ -218,12 +239,12 @@ def process_bmp0(bmpfile):
         # plt.clf()
 
         # column stdev
-        a0 = np.std(img_v[c1:c2, :], axis=0)
+        a0 = np.std(img_v[c1:c2, :].astype(np.float32), axis=0)  # <<< cast to float32 to reduce memory
         x = np.arange(0, a0.shape[0])
 
         # row stdev 1038
         mv_sdev_window = 1038  # 519
-        a01 = np.std(rolling_window(a0, mv_sdev_window), 1) ** 2  # 1038
+        a01 = np.std(rolling_window(a0, mv_sdev_window), 1) ** 2
         ax = moving_average(x / 1038, mv_sdev_window)  # 1038
 
         # Ra & Q95
@@ -307,17 +328,24 @@ def process_bmp0(bmpfile):
             img_v0 = img_v[:, int((i - 0.1) * 1038):int((i + 2) * 1038)]
             cv2.imwrite(tmp_dir + '/' + str(int(i)) + '.png', img_v0)
 
+        # <<< free large arrays to reduce peak memory
+        del img_v, a0, a01, a02, rpt_360, a_360_x, a_360_y  # <<<
+        gc.collect()  # <<<
+
         return [img_file, Ra, Q50, Q90, Q95]
 
-def process_bmp(bmpfile: str, save_images: bool = False):
+
+def process_bmp(bmpfile):
     # print(bmpfile)
     f = bmpfile
     nss_img_path = os.path.dirname(bmpfile) + '/'
     img_file = bmpfile  # './/P1276BM//' + f + '.png'
     img_v = convert_nss_rawimage(img_file)
-    if img_v.size == 0:
-        print(f"Skipping {img_file}: notch not found or invalid.")
-        return []
+
+    # <<< early exit if conversion failed to avoid attribute access on empty arrays
+    if img_v.size == 0:  # <<<
+        print('Invalid NSS bmp file...!')  # <<<
+        return []  # <<<
 
     # print(nss_img_path + os.path.basename(bmpfile)[:-4])
     # row stdev 1038
@@ -342,7 +370,12 @@ def process_bmp(bmpfile: str, save_images: bool = False):
         res4 = find_nonblack(col4, th_)
         res5 = find_nonblack(col5, th_)
         res6 = find_nonblack(col6, th_)
-        res = np.min([res1, res2, res3, res4, res5, res6])
+        # <<< guard against no valid indices
+        candidates = [r for r in [res1, res2, res3, res4, res5, res6] if r >= 0]  # <<<
+        if not candidates:  # <<<
+            print('Invalid NSS bmp file...!')  # <<<
+            return []  # <<<
+        res = np.min(candidates)  # <<<
         c1 = res + 10
         c2 = res + 230
         # img_v0=img_v[c1:c2,10000:10500]
@@ -351,8 +384,9 @@ def process_bmp(bmpfile: str, save_images: bool = False):
         # plt.clf()
 
         # column stdev
-        a0_0 = np.max(img_v[c1:c2, :], axis=0) - np.min(img_v[c1:c2, :], axis=0)
-        a0_1 = np.std(img_v[c1:c2, :], axis=0)
+        roi = img_v[c1:c2, :].astype(np.float32)  # <<< cast to float32 to reduce memory
+        a0_0 = np.max(roi, axis=0) - np.min(roi, axis=0)  # <<< use roi
+        a0_1 = np.std(roi, axis=0)  # <<< use roi
         x = np.arange(0, a0_1.shape[0])
 
         # a01_0=a0_0-np.mean(a0_0)  #1038
@@ -489,10 +523,15 @@ def process_bmp(bmpfile: str, save_images: bool = False):
                 img_v0 = img_v[:, int((i - 0.3) * mv_sdev_window_1):int((i + 1.6) * mv_sdev_window_1)]
                 cv2.imwrite(tmp_dir + '/' + str(int(i)) + '.png', img_v0)
 
+        # <<< free large arrays to reduce peak memory
+        del img_v, roi, a0_0, a0_1, a01_0, a01_1, a02_0, a02_1, rpt_360, a_360_x, a_360_y0, a_360_y1  # <<<
+        gc.collect()  # <<<
+
         return [img_file, Ra_0, Q50_0, Q90_0, Q99_0, Ra_1, Q50_1, Q90_1, Q99_1]
         # else:
     #    print('Execption...')
     #    return []
+
 
 def decompress():
     # 獲取當前目錄
@@ -538,6 +577,7 @@ def decompress():
         file_destination = mypath
         shutil.move(file_source, file_destination)
 
+
 def rename_move_rawdata():
     # 獲取當前目錄
     mypath = os.path.dirname(os.path.realpath(__file__))
@@ -572,75 +612,172 @@ def rename_move_rawdata():
 st.set_page_config(page_title="NSS Edge Image", layout="wide")
 st.title("NSS Edge Image")
 
-st.caption("Upload a **.zip** file. The app will extract .bmp files.")
+# st.caption("Select a **.zip** file. The app will extract .bmp files.")
 
-uploaded = st.file_uploader("Choose a .zip", type=["zip"], accept_multiple_files=False, label_visibility="collapsed")
 
-save_images = st.checkbox("Save full wafer & peak crops (heavy I/O & memory)", value=False, help="Disable to avoid large PNGs and many crop files during batch processing.")
-max_files = st.number_input("Max BMPs to process", min_value=1, value=5, step=1, help="Limit processing batch size to control memory usage.")
+network = [f"{d}:/" for d in ["H", "M", "Z"] if os.path.exists(f"{d}:/")]  # network drives limited to H:, M:, Z:
+selected_network = st.selectbox("Select a file path", network, key="selected_network", label_visibility="collapsed",
+                                index=None, placeholder="Select a network drive")
+if not isinstance(selected_network, str):
+    st.stop()
+ROOT = selected_network
 
-if uploaded:
-    if st.button("Process", type="primary"):
-        with tempfile.TemporaryDirectory(prefix="nss_zip_") as workdir:
-            outdir = os.path.join(workdir, "outputs")
-            os.makedirs(outdir, exist_ok=True)
+selected_folder = False
+if isinstance(selected_network, str) and selected_network.startswith(("M", "Z")):
+    selected_folder = st.selectbox("Select a folder", ["EDL", "EDU"], label_visibility="collapsed",
+                                   key="selected_folder", index=None, placeholder="Select a folder")
+    if not isinstance(selected_folder, str):
+        st.stop()
+    ROOT = os.path.join(selected_network, selected_folder)
 
-            bmp_paths = []
-            with zipfile.ZipFile(uploaded) as zf:
-                for info in zf.infolist():
-                    if info.filename.lower().endswith(".bmp"):
-                        zf.extract(info, workdir)
-                        bmp_paths.append(os.path.join(workdir, info.filename))
 
-            if not bmp_paths:
-                st.error("No .bmp files found inside the .zip file.")
+selected_folder = None
+if event and isinstance(event, dict):
+    # # if user selects a file, "path" key is used to direcly retrieve the file location
+    # # "path" key in "event" dictionary is only available when user clicks on a file name
+    # if event.get("event") == "file_selected" and isinstance(event.get("path"), str):
+    # selected_zip = event["path"]
+    # # if "path" key is not available, "selected" key is used to retrieve the first item in the list of selected files or folders
+    # # "selected" key in "event" dictionary is only available when user clicks on the checkbox
+    # elif event.get("selected"):
+    # checked_item = event["selected"][0]
+    # if isinstance(checked_item, dict) and isinstance(checked_item.get("path"),str) and checked_item.get("path").lower().endswith(".zip"):
+    # selected_zip = checked_item["path"]
+    p = event.get("path")
+    if isinstance(p, str) and os.path.isdir(p):
+        selected_folder = p
+    elif event.get("selected"):
+        checked_folder = event["selected"][0]
+        if isinstance(checked_folder, dict) and isinstance(checked_folder.get("path"), str):
+            p = checked_folder["path"]
+            if os.path.isdir(p):
+                selected_folder = p
+
+if "selected_folder" not in st.session_state:
+    st.session_state["selected_folder"] = None
+if selected_folder:
+    st.session_state["selected_folder"] = selected_folder
+else:
+    selected_folder = st.session_state.get("selected_folder")
+
+
+    selected_zip = None  # will be set once a .zip is chosen
+
+    if isinstance(ROOT, str):
+        current_path = ROOT  # start from ROOT (e.g., "M:/EDL")
+        level = 0  # used to make Streamlit widget keys unique and stable
+
+        while True:
+            # List folders and .zip files in the current_path
+            try:
+                with os.scandir(current_path) as it:
+                    dirs = sorted([e.name for e in it if e.is_dir()])
+            except PermissionError:
+                st.error(f"Permission denied: {current_path}")
+                st.stop()
+            except FileNotFoundError:
+                st.error(f"Path not found: {current_path}")
                 st.stop()
 
-            bmp_paths = bmp_paths[: int(max_files)]
-            rows = []
-            progress = st.progress(0.0)
-            status = st.empty()
+            # Re-scan for files (separate scandir so the previous iterator isn't exhausted)
+            with os.scandir(current_path) as it:
+                zips = sorted([e.name for e in it if e.is_file() and e.name.lower().endswith(".zip")])
 
-            for i, bmp in enumerate(bmp_paths, 1):
-                try:
-                    status.write(f"Processing {os.path.basename(bmp)} ({i}/{len(bmp_paths)}) ...")
-                    row = process_bmp(bmp, save_images=save_images)
-                    if row:
-                        rows.append(row)
-                except Exception as e:
-                    st.warning(f"Failed on {os.path.basename(bmp)}: {e}")
-                finally:
-                    gc.collect()
-                    progress.progress(i / len(bmp_paths))
-
-            if not rows:
-                st.error("Processing finished but no results were produced.")
-                st.stop()
-
-            cols = [
-                "filename",
-                "Ra_raw",
-                "RawQ50",
-                "RawQ90",
-                "RawQ99",
-                "Ra_mv",
-                "MvQ50",
-                "MvQ90",
-                "MvQ99",
-            ]
-            df = pd.DataFrame(rows, columns=cols)
-
-            summary_xlsx = os.path.join(outdir, "nss_image_summary.xlsx")
-            df.to_excel(summary_xlsx, index=False)
-            auto_fit(summary_xlsx)
-
-            st.subheader("Summary")
-            st.dataframe(df, use_container_width=True)
-            with open(summary_xlsx, "rb") as fh:
-                st.download_button(
-                    "Download",
-                    data=fh.read(),
-                    file_name="nss_image_summary.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            # If we see .zip files in the current folder, let the user pick one and break
+            if zips:
+                st.subheader("Select a .zip file")
+                selected_zip_name = st.selectbox(
+                    f"Found {len(zips)} .zip file(s) in: {current_path}",
+                    zips,
+                    key=f"zip_select_{current_path}",
+                    index=None,
+                    placeholder="Select a .zip file"
                 )
-            st.success("Done.")
+                if not isinstance(selected_zip_name, str):
+                    st.stop()  # wait for user to pick
+                selected_zip = os.path.join(current_path, selected_zip_name)
+                break  # done navigating; proceed to processing
+
+            # If there are no .zip files here, we must go deeper. Decide whether to auto-skip or ask.
+            if len(dirs) == 0:
+                st.error(f"No subfolders or .zip files found under: {current_path}")
+                st.stop()
+
+            if len(dirs) == 1:
+                # Auto-advance through single-child directories (jump logic)
+                only = dirs[0]
+                # Optional breadcrumb for clarity
+                st.caption(f"Auto-skipping single folder: {os.path.join(current_path, only)}")
+                current_path = os.path.join(current_path, only)
+                # loop again
+            else:
+                # We found a fork (2+ items) → ask the user to choose via selectbox
+                st.subheader("Select a folder")
+                selected_dir = st.selectbox(
+                    f"Choose a folder in: {current_path}",
+                    dirs,
+                    key=f"dir_select_level_{level}",
+                    index=None,
+                    placeholder="Select a folder"
+                )
+                if not isinstance(selected_dir, str):
+                    st.stop()  # wait for user to pick
+                current_path = os.path.join(current_path, selected_dir)
+                level += 1
+                # loop until we reach a folder containing .zip files
+
+        # At this point we have selected_zip
+        if selected_zip:
+            st.success(f"Selected .zip file: `{selected_zip}`")
+
+            # Keep the exact same processing behavior as your original code
+            if st.button("Process", type="primary", key="process_selected_zip"):
+                with tempfile.TemporaryDirectory(prefix="nss_zip_") as workdir:
+                    outdir = os.path.join(workdir, "outputs")
+                    os.makedirs(outdir, exist_ok=True)
+
+                    # Extract .bmp files from the selected .zip
+                    bmp_paths = []
+                    with zipfile.ZipFile(selected_zip) as zf:
+                        for info in zf.infolist():
+                            if info.filename.lower().endswith(".bmp"):
+                                # Extract to working directory preserving subfolders if any
+                                zf.extract(info, workdir)
+                                bmp_paths.append(os.path.join(workdir, info.filename))
+
+                    if not bmp_paths:
+                        st.error("No .bmp files found inside the .zip file.")
+                        st.stop()
+
+                    rows = []
+                    for bmp in bmp_paths:
+                        try:
+                            row = process_bmp(bmp)  # uses your existing function
+                            if row:
+                                rows.append(row)
+                        except Exception as e:
+                            st.warning(f"Failed on {os.path.basename(bmp)}: {e}")
+                        finally:
+                            gc.collect()  # proactively free memory after each file
+
+                    if not rows:
+                        st.error("Processing finished but no results were produced.")
+                        st.stop()
+
+                    cols = ['filename', 'Ra_raw', 'RawQ50', 'RawQ90', 'RawQ99', 'Ra_mv', 'MvQ50', 'MvQ90', 'MvQ99']
+                    df = pd.DataFrame(rows, columns=cols)
+
+                    summary_xlsx = os.path.join(outdir, "nss_image_summary.xlsx")
+                    df.to_excel(summary_xlsx, index=False)
+                    auto_fit(summary_xlsx)  # reuse your existing helper
+
+                    st.subheader("Summary")
+                    st.dataframe(df, use_container_width=True)
+                    st.download_button(
+                        "Download",
+                        data=open(summary_xlsx, "rb").read(),
+                        file_name="nss_image_summary.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+
+                    st.success("Done.")

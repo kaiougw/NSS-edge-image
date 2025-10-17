@@ -608,12 +608,14 @@ def rename_move_rawdata():
 st.set_page_config(page_title="NSS Edge Image", layout="wide")
 st.title("NSS Edge Image")
 
+st.caption("Enter a file path or browse")
+
 network = [f"{d}:/".replace("/", os.sep) for d in ["H", "M", "Z"] if os.path.exists(f"{d}:/".replace("/", os.sep))]  # network drives limited to H:, M:, Z:
 
 typed_path = st.text_input("Enter a file path", value=st.session_state.get("typed_path", ""), label_visibility="collapsed", placeholder="Enter a file path", key="typed_path")
 path_override = None
 if isinstance(typed_path, str) and typed_path.strip():
-    tp = typed_path.strip().replace("/", os.sep)
+    tp = typed_path.strip().replace("/", os.sep) # replace / with \
     tp = os.path.normpath(tp) # remove redundant .. or / and normalize path
 
     drive, _ = os.path.splitdrive(tp) # extract drive
@@ -634,7 +636,7 @@ if isinstance(typed_path, str) and typed_path.strip():
         path_override = tp
 
 path_selection = st.empty()
-selected_network = st.selectbox("Select a file path", network, key="selected_network", label_visibility="collapsed", index=None, placeholder="Select a network drive")
+selected_network = st.selectbox("Select a file path", network, key="selected_network", label_visibility="hidden", index=None, placeholder="Select a network drive")
 if not isinstance(selected_network, str):
     st.stop()
 ROOT = selected_network
@@ -643,18 +645,35 @@ path_selection.markdown(f"`{ROOT}`")
 
 selected_folder = False
 if isinstance(selected_network, str) and selected_network.startswith(("M", "Z")): # M: and Z: drives contain raw data
-    selected_folder = st.selectbox("Select a folder", ["EDL", "EDU"], key="selected_folder", label_visibility="collapsed", index=None, placeholder="Select a folder")
+    selected_folder = st.selectbox("Select a bevel folder", ["EDL", "EDU"], key="selected_folder", label_visibility="collapsed", index=None, placeholder="Select a folder")
     if not isinstance(selected_folder, str):
         st.stop()
     ROOT = os.path.join(selected_network, selected_folder)
 
+typed_steps = [] # list of sequence of folder names
+typed_zip = None # .zip file name if user typed the full file path
+typed_ptr = 0 # index to keep track of how many files have been auto-navigated through
+
+if path_override:
+    if tp.lower().endswith(".zip") and os.path.isfile(tp): # if typed path ends with .zip and points to an existing file
+        typed_zip = os.path.basename(tp)  # .zip file name = the base name of the typed file path
+        path_override = os.path.dirname(tp) #  path_override = parent folder (i.e., file path leading to .zip file)
+    try:
+        rel = os.path.relpath(path_override, ROOT) if ROOT else None # rel = relative path from ROOT (e.g., M:\EDL) to path_override (e.g., M:\EDL\2025-08\C\4300) -> rel becomes 2025-08\C\4300
+        if rel and not rel.startswith(os.pardir): # if rel does not start with ".." meaning that it is inside ROOT
+            typed_steps = [p for p in rel.split(os.sep) if p] # then split the path into folder components using os.sep (/ or \)
+        else: # if rel starts with ".." meaning that it is outside ROOT
+            typed_steps = [p for p in os.path.normpath(path_override).split(os.sep) if p] # then normalize and split the path
+    except Exception:
+        typed_steps = [p for p in os.path.normpath(path_override).split(os.sep) if p]
+
 path_selection.markdown(f"`{ROOT}`")
 
-selected_zip = False
+selected_zip = False # for storing full path of the selected .zip file
 if isinstance(ROOT, str):
-    current_path = path_override or ROOT
-    level = 0
-    while True: # keep looping and go down each folder until a .zip file is found
+    current_path = path_override or ROOT # current path starts from the path user typed; otherwise, start from ROOT
+    level = 0 # index to keep track of how many files have been auto-navigated through
+    while True: # Keep looping and go down each folder until a .zip file is found
         try:
             with os.scandir(current_path) as it:
                 dirs = sorted([e.name for e in it if e.is_dir()])
@@ -669,14 +688,22 @@ if isinstance(ROOT, str):
             zips = sorted([e.name for e in it if e.is_file() and e.name.lower().endswith(".zip")])
 
         if zips:
-            selected_zip_name = st.selectbox("Select a **.zip** file. The .bmp file will be extracted.", zips, key=f"zip_select_{current_path}", index=None, placeholder="Select a .zip file")
-            if not isinstance(selected_zip_name, str):
-                st.stop()
+            if typed_zip and typed_zip in zips:
+                # Pre-fill selectbox value so the UI reflects the typed choice
+                st.session_state[f"zip_select_{current_path}"] = typed_zip
+                selected_zip_name = typed_zip
+            else:
+                selected_zip_name = st.selectbox(
+                    "Select a **.zip** file. The .bmp file will be extracted.",
+                    zips,
+                    key=f"zip_select_{current_path}",
+                    index=None,
+                    placeholder="Select a .zip file"
+                )
+                if not isinstance(selected_zip_name, str):
+                    st.stop()
 
             selected_zip = os.path.join(current_path, selected_zip_name)
-
-            path_selection.markdown(f"`{selected_zip}`")
-
             break  # done navigating; proceed to processing
 
         if len(dirs) == 0: # if no folders or .zip files are found
@@ -687,9 +714,21 @@ if isinstance(ROOT, str):
             only = dirs[0]
             current_path = os.path.join(current_path, only)
         else:
-            selected_dir = st.selectbox("Select a folder", dirs, key=f"dir_select_level_{level}", label_visibility="collapsed", index=None, placeholder="Select a folder")
-            if not isinstance(selected_dir, str):
-                st.stop()
+            auto_choice = None
+            if typed_ptr < len(typed_steps):
+                candidate = typed_steps[typed_ptr]
+                if candidate in dirs:
+                    st.session_state[f"dir_select_level_{level}"] = candidate
+                    auto_choice = candidate
+                    typed_ptr += 1  # advance only when we used this step
+
+            if auto_choice is None:
+                selected_dir = st.selectbox("Select a folder", dirs, key=f"dir_select_level_{level}", label_visibility="collapsed", index=None, placeholder="Select a folder")
+                if not isinstance(selected_dir, str):
+                    st.stop()
+            else:
+                selected_dir = auto_choice
+
             current_path = os.path.join(current_path, selected_dir)
             level += 1
 

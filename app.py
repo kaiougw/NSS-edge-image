@@ -637,7 +637,7 @@ if isinstance(typed_path, str) and typed_path.strip():
 
 path_selection = st.empty()
 path_selection.markdown("File path: ")
-selected_network = st.selectbox("Select a file path", network, key="selected_network", label_visibility="hidden", index=None, placeholder="Select a network drive")
+selected_network = st.selectbox("Select a file path", network, key="selected_network", label_visibility="collapsed", index=None, placeholder="Select a network drive")
 if not isinstance(selected_network, str):
     st.stop()
 ROOT = selected_network

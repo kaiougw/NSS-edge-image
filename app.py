@@ -608,7 +608,7 @@ def rename_move_rawdata():
 st.set_page_config(page_title="NSS Edge Image", layout="wide")
 st.title("NSS Edge Image")
 
-st.caption("Enter a file path or browse")
+st.caption("Enter a file path or browse below")
 
 network = [f"{d}:/".replace("/", os.sep) for d in ["H", "M", "Z"] if os.path.exists(f"{d}:/".replace("/", os.sep))]  # network drives limited to H:, M:, Z:
 

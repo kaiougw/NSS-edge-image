@@ -44,6 +44,7 @@ import gc
 #                 ws.column_dimensions[letter].width = (max_width + 2) * 1.2
 #         wb.save(name_of_wb)
 
+
 def moving_average(x, w):
     """
     Input:
@@ -51,6 +52,7 @@ def moving_average(x, w):
         w: window size (integer)
     """
     return np.convolve(x, np.ones(w), 'valid') / w
+
 
 def rolling_window(a, window):
     """
@@ -62,6 +64,7 @@ def rolling_window(a, window):
     strides = a.strides + (a.strides[-1],)
     return np.lib.stride_tricks.as_strided(a, shape=shape, strides=strides)
 
+
 def find_nonblack(npy1d, threshold):
     """
     Input:
@@ -70,33 +73,21 @@ def find_nonblack(npy1d, threshold):
     Output:
         index (int) of the first element >= threshold, or -1 if none
     """
-    peaks = scipy.signal.find_peaks_cwt(npy1d, 10)
-    # plt.plot(col)
-    # plt.plot(peaks ,col[peaks],'o')
-    # plt.show()
-    res = -1
-    peaks = scipy.signal.find_peaks_cwt(npy1d, 10)
+    peaks = scipy.signal.find_peaks_cwt(npy1d,10)
+    #plt.plot(col)
+    #plt.plot(peaks ,col[peaks],'o')
+    #plt.show()
     for p in peaks:
-        if npy1d[p] >= threshold:
-            res = p
+        if npy1d[p]>=threshold:
+            res=p
             break
     return res
 
+
 def convert_nss_rawimage(img_file):
-    """
-    Process a raw NSS BMP image and detect the notch position to reconstruct the full wafer edge image.
-    Input:
-        img_file: path to the BMP image file (string)
-    Output:
-        img_v1: processed image as a 2D array
-    """
     # img_file='.\\P1276BM\\mjl\\1-9 (SILTRONIC-WF)_EDU_0.bmp'
     img_v = cv2.imread(img_file, cv2.IMREAD_GRAYSCALE)
     # print(img_v.shape)
-
-    if img_v is None:
-        print("Invalid Image.")
-        return np.array([])
 
     if img_v.shape[0] == 384000 and img_v.shape[1] == 512:
         col_u = img_v[:, 5]  # detection upper notch white spot
@@ -104,24 +95,24 @@ def convert_nss_rawimage(img_file):
         res_u = 0
         res_l = 0
 
-        for x, val in enumerate(col_u):  # scan upper column for first pixel >=254
+        for x, val in enumerate(col_u):
             if val >= 254:
                 res_u = x
                 break
-        for x, val in enumerate(col_l):  # scan lower column for first pixel >=254
+        for x, val in enumerate(col_l):
             if val >= 254:
                 res_l = x
                 break
 
-        res = np.max([res_u, res_l])  # take upper or lower detected position as notch position
+        res = np.max([res_u, res_l])  # upper or lower
 
-        if res > 0:  # if notch is found, proceed to reconstruct image and slice image into two parts
+        if res > 0:
             end_1 = int((img_v.shape[0] - res) / 1038) - 2
             top_1 = (359 - end_1 + 1)
             img_1 = img_v[res:res + end_1 * 1038, :]
             img_2 = img_v[res - top_1 * 1038:res, :]
 
-            img_v1 = cv2.vconcat([img_1, img_2])  # concatenate two parts vertically to form a continuous wafer image
+            img_v1 = cv2.vconcat([img_1, img_2])
             # print(img_v1.shape)
             for i in range(0, 360):
                 # cv2.line(img_v1, (0,i*1038), (45,i*1038), (255, 255, 255), 3)
@@ -142,16 +133,11 @@ def convert_nss_rawimage(img_file):
         print("Invalid Image.")
         return np.array([])
 
-def turning_points(array):
-    '''
-    Finds the turning points within an 1D array and returns the indices of the minimum and
-    maximum turning points in two separate lists.
 
-    Input:
-        array: 1D array
-    Output:
-        idx_min: list of indices of minimum turning points
-        idx_max: list of indices of maximum turning points
+def turning_points(array):
+    ''' turning_points(array) -> min_indices, max_indices
+    Finds the turning points within an 1D array and returns the indices of the minimum and 
+    maximum turning points in two separate lists.
     '''
     idx_max, idx_min = [], []
     if (len(array) < 3):
@@ -166,9 +152,8 @@ def turning_points(array):
 
     ps = get_state(array[0], array[1])
     begin = 1
-    for i in range(2,
-                   len(array)):  # if trend changes (from rising to falling or falling to rising), record turning point
-        s = get_state(array[i - 1], array[i])  # compare each pair of values
+    for i in range(2, len(array)):
+        s = get_state(array[i - 1], array[i])
         if s != NEUTRAL:
             if ps != NEUTRAL and ps != s:
                 if s == FALLING:
@@ -179,169 +164,143 @@ def turning_points(array):
             ps = s
     return idx_min, idx_max
 
-def process_bmp0(bmpfile):
-    """
-    Process a BMP file to analyze wafer edge image, compute roughness, and generate related charts and CSV files.
 
-    Input:
-        bmpfile: path to the BMP image file (string)
-    Output:
-        List containing analysis results
-    """
-    # print(bmpfile)
+# def process_bmp0(bmpfile):
+#     #print(bmpfile)
+#
+#     nss_img_path= os.path.dirname(bmpfile) +'/'
+#     img_file=bmpfile#'.//P1276BM//' + f + '.png'
+#     img_v=convert_nss_rawimage(img_file)
+#
+#     #print(nss_img_path + os.path.basename(bmpfile)[:-4])
+#
+#     if img_v.shape[1]<(360*1038):
+#         print('Invalid NSS bmp file...!')
+#         return []
+#     else:
+#         #detection wafer position
+#         col1=img_v[:,5000]
+#         col2=img_v[:,5500]
+#         col3=img_v[:,10000]
+#         col4=img_v[:,10500]
+#         col5=img_v[:,20000]
+#         col6=img_v[:,21000]
+#         th_=50
+#         res1 = find_nonblack(col1,th_)
+#         res2 = find_nonblack(col2,th_)
+#         res3 = find_nonblack(col3,th_)
+#         res4 = find_nonblack(col4,th_)
+#         res5 = find_nonblack(col5,th_)
+#         res6 = find_nonblack(col6,th_)
+#         res=np.min([res1,res2,res3,res4,res5,res6])
+#         c1=res+10
+#         c2=res+230
+#         img_v0=img_v[c1:c2,10000:10500]
+#         #plt.imshow(img_v0,cmap=plt.cm.gray)
+#         #plt.show()
+#         #plt.clf()
+#
+#         #column stdev
+#         a0=np.std(img_v[c1:c2,:],axis=0)
+#         x= np.arange(0,a0.shape[0])
+#
+#         #row stdev 1038
+#         mv_sdev_window=1038 #519
+#         a01=np.std(rolling_window(a0, mv_sdev_window), 1)**2  #1038
+#         ax=moving_average(x/1038, mv_sdev_window) #1038
+#
+#         #Ra & Q95
+#         a02=a01[1038*3:1038*-2]
+#         Ra=np.sum(np.abs(a02))/a02.shape[0]
+#         Q95=np.percentile(a02, 95, axis=0)
+#         Q90=np.percentile(a02, 90, axis=0)
+#         Q50=np.percentile(a02, 50, axis=0)
+#         #rpt.append([img_file,Ra,Q50,Q90,Q95])
+#
+#
+#         #360 ra
+#         rpt_360=[]
+#         for i in range(3,358):
+#             a_=a01[1038*i:1038*(i+1)]
+#             ra_=np.sum(np.abs(a_))/a_.shape[0]
+#             rpt_360.append([i,ra_])
+#
+#         #find peaks
+#         a_360_x=np.array(rpt_360)[:,0]
+#         a_360_y=np.array(rpt_360)[:,1]
+#         idx_min,idx_max=turning_points(a_360_y)
+#         rpt_360_peaks=[]
+#         for i in idx_max:
+#             rpt_360_peaks.append([a_360_x[i],a_360_y[i]])
+#         arr=np.array(rpt_360_peaks)
+#         a_360_peaks=arr[arr[:, 1].argsort()]
+#
+#
+#         #plot by deg chart
+#         plt.figure(figsize=(8,4))
+#         plt.title('NSS EDGE Image Quality Ra by Deg')
+#         plt.plot(a_360_x,a_360_y,label=img_file)
+#         plt.scatter(a_360_peaks[-10:,0],a_360_peaks[-10:,1],facecolors='none', edgecolors='r')
+#         plt.scatter(a_360_peaks[-20:-10,0],a_360_peaks[-20:-10,1],facecolors='none', edgecolors='g')
+#         plt.ylim(0,100)
+#         plt.xticks(np.arange(0, 360, 10.0))
+#         plt.xticks(rotation=90, ha='left')
+#         plt.xlabel('Angle NotchDown CW')
+#         plt.legend()
+#         plt.savefig(nss_img_path + os.path.basename(bmpfile)[:-4] + '_360chart.jpg')
+#         #plt.show()
+#         plt.clf()
+#         plt.close()
+#
+#         #excluded notch before 2500 and last 2500 pixels
+#         plt.figure(figsize=(8,4))
+#         plt.title('NSS EDGE Image Quality Ra=' + str(round(Ra,2)))
+#         plt.plot(ax[1038*3:1038*-2],a01[1038*3:1038*-2],label=img_file)
+#         plt.ylim(0,100)
+#         plt.xlabel('Angle NotchDown CW')
+#         plt.xticks(np.arange(0, 360, 10.0))
+#         plt.xticks(rotation=90, ha='left')
+#         plt.legend()
+#         plt.savefig(nss_img_path + os.path.basename(bmpfile)[:-4] + '_chart.jpg')
+#         #plt.show()
+#         plt.clf()
+#         plt.close()
+#         #export to save csv files
+#         np.savetxt(nss_img_path + os.path.basename(bmpfile)[:-4] + '_peaks.csv',a_360_peaks, fmt='%1.3f',delimiter=',')
+#         np.savetxt(nss_img_path + os.path.basename(bmpfile)[:-4] + '_360.csv',np.array(rpt_360), fmt='%1.3f',delimiter=',')
+#         #np.savetxt(nss_img_path + os.path.basename(f)[:-4] + '.csv',a01, fmt='%1.3f',delimiter=',')
+#
+#
+#         #save images
+#         for i in np.arange(1038*3,a0.shape[0]-1038*2):
+#             x0=int(i)+519
+#             x1=int(i+1)+519
+#             y0=int(a01[i]/100*200)
+#             y1=int(a01[i+1]/100*200)
+#             cv2.line(img_v, (x0, img_v.shape[0]-y0-10), (x1, img_v.shape[0]-y1-10), (255, 255, 255), 1)
+#
+#         #print(nss_img_path + os.path.basename(f)[:-4] + '.png')
+#         #save whole wafer image
+#         cv2.imwrite(nss_img_path + os.path.basename(bmpfile)[:-4] + '.png', img_v)
+#
+#         #crop image for top 20 peaks
+#         tmp_dir=os.path.dirname(bmpfile) + '/' + os.path.basename(bmpfile)[:-4]
+#         if not os.path.isdir(tmp_dir):
+#             os.mkdir(tmp_dir)
+#         for i in a_360_peaks[-20:,0]:
+#             img_v0=img_v[:,int((i-0.1)*1038):int((i+2)*1038)]
+#             cv2.imwrite(tmp_dir + '/' + str(int(i)) + '.png', img_v0)
+#
+#         return [img_file,Ra,Q50,Q90,Q95
 
-    nss_img_path = os.path.dirname(bmpfile) + '/'
-    img_file = bmpfile  # './/P1276BM//' + f + '.png'
-    img_v = convert_nss_rawimage(img_file)
-
-    if img_v.size == 0:
-        print('Invalid NSS bmp file...!')
-        return []
-
-    # print(nss_img_path + os.path.basename(bmpfile)[:-4])
-
-    if img_v.shape[1] < (360 * 1038):
-        print('Invalid NSS bmp file...!')
-        return []
-    else:
-        # detection wafer position
-        col1 = img_v[:, 5000]
-        col2 = img_v[:, 5500]
-        col3 = img_v[:, 10000]
-        col4 = img_v[:, 10500]
-        col5 = img_v[:, 20000]
-        col6 = img_v[:, 21000]
-        th_ = 50
-        res1 = find_nonblack(col1, th_)
-        res2 = find_nonblack(col2, th_)
-        res3 = find_nonblack(col3, th_)
-        res4 = find_nonblack(col4, th_)
-        res5 = find_nonblack(col5, th_)
-        res6 = find_nonblack(col6, th_)
-        candidates = [r for r in [res1, res2, res3, res4, res5, res6] if r >= 0]
-        if not candidates:
-            print('Invalid NSS bmp file...!')
-            return []
-        res = np.min(candidates)
-        c1 = res + 10
-        c2 = res + 230
-        img_v0 = img_v[c1:c2, 10000:10500]
-        # plt.imshow(img_v0,cmap=plt.cm.gray)
-        # plt.show()
-        # plt.clf()
-
-        # column stdev
-        a0 = np.std(img_v[c1:c2, :].astype(np.float32), axis=0)
-        x = np.arange(0, a0.shape[0])
-
-        # row stdev 1038
-        mv_sdev_window = 1038  # 519
-        a01 = np.std(rolling_window(a0, mv_sdev_window), 1) ** 2
-        ax = moving_average(x / 1038, mv_sdev_window)  # 1038
-
-        # Ra & Q95
-        a02 = a01[1038 * 3:1038 * -2]
-        Ra = np.sum(np.abs(a02)) / a02.shape[0]
-        Q95 = np.percentile(a02, 95, axis=0)
-        Q90 = np.percentile(a02, 90, axis=0)
-        Q50 = np.percentile(a02, 50, axis=0)
-        # rpt.append([img_file,Ra,Q50,Q90,Q95])
-
-        # 360 ra
-        rpt_360 = []
-        for i in range(3, 358):
-            a_ = a01[1038 * i:1038 * (i + 1)]
-            ra_ = np.sum(np.abs(a_)) / a_.shape[0]
-            rpt_360.append([i, ra_])
-
-        # find peaks
-        a_360_x = np.array(rpt_360)[:, 0]
-        a_360_y = np.array(rpt_360)[:, 1]
-        idx_min, idx_max = turning_points(a_360_y)
-        rpt_360_peaks = []
-        for i in idx_max:
-            rpt_360_peaks.append([a_360_x[i], a_360_y[i]])
-        arr = np.array(rpt_360_peaks)
-        a_360_peaks = arr[arr[:, 1].argsort()]
-
-        # plot by deg chart
-        plt.figure(figsize=(8, 4))
-        plt.title('NSS EDGE Image Quality Ra by Deg')
-        plt.plot(a_360_x, a_360_y, label=img_file)
-        plt.scatter(a_360_peaks[-10:, 0], a_360_peaks[-10:, 1], facecolors='none', edgecolors='r')
-        plt.scatter(a_360_peaks[-20:-10, 0], a_360_peaks[-20:-10, 1], facecolors='none', edgecolors='g')
-        plt.ylim(0, 100)
-        plt.xticks(np.arange(0, 360, 10.0))
-        plt.xticks(rotation=90, ha='left')
-        plt.xlabel('Angle NotchDown CW')
-        plt.legend()
-        plt.savefig(nss_img_path + os.path.basename(bmpfile)[:-4] + '_360chart.jpg')
-        # plt.show()
-        plt.clf()
-        plt.close()
-
-        # excluded notch before 2500 and last 2500 pixels
-        plt.figure(figsize=(8, 4))
-        plt.title('NSS EDGE Image Quality Ra=' + str(round(Ra, 2)))
-        plt.plot(ax[1038 * 3:1038 * -2], a01[1038 * 3:1038 * -2], label=img_file)
-        plt.ylim(0, 100)
-        plt.xlabel('Angle NotchDown CW')
-        plt.xticks(np.arange(0, 360, 10.0))
-        plt.xticks(rotation=90, ha='left')
-        plt.legend()
-        plt.savefig(nss_img_path + os.path.basename(bmpfile)[:-4] + '_chart.jpg')
-        # plt.show()
-        plt.clf()
-        plt.close()
-        # export to save csv files
-        np.savetxt(nss_img_path + os.path.basename(bmpfile)[:-4] + '_peaks.csv', a_360_peaks, fmt='%1.3f',
-                   delimiter=',')
-        np.savetxt(nss_img_path + os.path.basename(bmpfile)[:-4] + '_360.csv', np.array(rpt_360), fmt='%1.3f',
-                   delimiter=',')
-        # np.savetxt(nss_img_path + os.path.basename(f)[:-4] + '.csv',a01, fmt='%1.3f',delimiter=',')
-
-        # save images
-        for i in np.arange(1038 * 3, a0.shape[0] - 1038 * 2):
-            x0 = int(i) + 519
-            x1 = int(i + 1) + 519
-            y0 = int(a01[i] / 100 * 200)
-            y1 = int(a01[i + 1] / 100 * 200)
-            cv2.line(img_v, (x0, img_v.shape[0] - y0 - 10), (x1, img_v.shape[0] - y1 - 10), (255, 255, 255), 1)
-
-        # print(nss_img_path + os.path.basename(f)[:-4] + '.png')
-        # save whole wafer image
-        cv2.imwrite(nss_img_path + os.path.basename(bmpfile)[:-4] + '.png', img_v)
-
-        # crop image for top 20 peaks
-        tmp_dir = os.path.dirname(bmpfile) + '/' + os.path.basename(bmpfile)[:-4]
-        if not os.path.isdir(tmp_dir):
-            os.mkdir(tmp_dir)
-        for i in a_360_peaks[-20:, 0]:
-            img_v0 = img_v[:, int((i - 0.1) * 1038):int((i + 2) * 1038)]
-            cv2.imwrite(tmp_dir + '/' + str(int(i)) + '.png', img_v0)
-
-        del img_v, a0, a01, a02, rpt_360, a_360_x, a_360_y
-        gc.collect()
-
-        return [img_file, Ra, Q50, Q90, Q95]
 
 def process_bmp(bmpfile):
-    """
-    Process a BMP file to analyze wafer edge image, compute roughness, and generate related charts and CSV files.
-
-    Input:
-        bmpfile: path to the BMP image file (string)
-    Output:
-        List containing analysis results
-    """
     # print(bmpfile)
     f = bmpfile
     nss_img_path = os.path.dirname(bmpfile) + '/'
     img_file = bmpfile  # './/P1276BM//' + f + '.png'
     img_v = convert_nss_rawimage(img_file)
-
-    # early exit if conversion failed to avoid attribute access on empty arrays
-    if img_v.size == 0:
+    if img_v is None or img_v.size == 0:
         print('Invalid NSS bmp file...!')
         return []
 
@@ -349,12 +308,11 @@ def process_bmp(bmpfile):
     # row stdev 1038
     # mv_sdev_window_0=5 #519 short wave
     mv_sdev_window_1 = 1038  # 519 long wave
-
-    if img_v.shape[1] < (360 * mv_sdev_window_1):
+    if img_v.shape[1] < (360 * mv_sdev_window_1): # ensure image is 360 degrees wide; one degree corresponds to 1038 columns
         print('Invalid NSS bmp file...!')
         return []
     else:
-        # detection wafer position
+        # detect wafer position
         col1 = img_v[:, 5000]
         col2 = img_v[:, 5500]
         col3 = img_v[:, 10000]
@@ -368,12 +326,7 @@ def process_bmp(bmpfile):
         res4 = find_nonblack(col4, th_)
         res5 = find_nonblack(col5, th_)
         res6 = find_nonblack(col6, th_)
-        # guard against no valid indices
-        candidates = [r for r in [res1, res2, res3, res4, res5, res6] if r >= 0]
-        if not candidates:
-            print('Invalid NSS bmp file...!')
-            return []
-        res = np.min(candidates)
+        res = np.min([res1, res2, res3, res4, res5, res6])
         c1 = res + 10
         c2 = res + 230
         # img_v0=img_v[c1:c2,10000:10500]
@@ -382,9 +335,8 @@ def process_bmp(bmpfile):
         # plt.clf()
 
         # column stdev
-        roi = img_v[c1:c2, :].astype(np.float32)  # cast to float32 to reduce memory
-        a0_0 = np.max(roi, axis=0) - np.min(roi, axis=0)
-        a0_1 = np.std(roi, axis=0)
+        a0_0 = np.max(img_v[c1:c2, :], axis=0) - np.min(img_v[c1:c2, :], axis=0)
+        a0_1 = np.std(img_v[c1:c2, :], axis=0)
         x = np.arange(0, a0_1.shape[0])
 
         # a01_0=a0_0-np.mean(a0_0)  #1038
@@ -440,7 +392,7 @@ def process_bmp(bmpfile):
         a_360_peaks0 = arr0[arr0[:, 1].argsort()]
         a_360_peaks1 = arr1[arr1[:, 1].argsort()]
 
-        # plot by deg chart
+        # plot by deg chart and save plot as <basename>_360chart.jpg
         plt.figure(figsize=(8, 4))
         plt.title('NSS EDGE Image Quality Ra by Deg')
         plt.plot(a_360_x, a_360_y0, label=os.path.basename(img_file) + '(raw)')
@@ -521,14 +473,11 @@ def process_bmp(bmpfile):
                 img_v0 = img_v[:, int((i - 0.3) * mv_sdev_window_1):int((i + 1.6) * mv_sdev_window_1)]
                 cv2.imwrite(tmp_dir + '/' + str(int(i)) + '.png', img_v0)
 
-        # free large arrays to reduce peak memory
-        del img_v, roi, a0_0, a0_1, a01_0, a01_1, a02_0, a02_1, rpt_360, a_360_x, a_360_y0, a_360_y1
-        gc.collect()
-
         return [img_file, Ra_0, Q50_0, Q90_0, Q99_0, Ra_1, Q50_1, Q90_1, Q99_1]
         # else:
     #    print('Execption...')
     #    return []
+
 
 def decompress():
     # 獲取當前目錄
@@ -556,7 +505,7 @@ def decompress():
                 if f.find('.bmp') != -1:
                     fullpath = os.path.join(root, f)
                     list_of_all_bmp.append(fullpath)
-        # 重新命名bmp檔案
+        # 重新命名bmp檔案            
         for j in list_of_all_bmp:
             old_file = j
             new_file = os.path.join(os.path.dirname(j), waferid + '.bmp')
@@ -573,6 +522,7 @@ def decompress():
         file_source = i
         file_destination = mypath
         shutil.move(file_source, file_destination)
+
 
 def rename_move_rawdata():
     # 獲取當前目錄
@@ -702,10 +652,12 @@ if isinstance(ROOT, str):
                 # Pre-fill selectbox value so it reflects the typed choice
                 st.session_state[f"zip_select_{current_path}"] = typed_zip
                 waferid = typed_zip
+
             else:
                 waferid = st.selectbox("Select a **.zip** file. The .bmp file will be extracted.", zips, key=f"zip_select_{current_path}", index=None, placeholder="Wafer ID")
                 if not isinstance(waferid, str):
                     st.stop()
+                path_selection.markdown(f"`{current_path}`")
 
             selected_zip = os.path.join(current_path, waferid)
             break  # done navigating; proceed to processing

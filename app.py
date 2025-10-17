@@ -19,30 +19,30 @@ import gc
 
 # 功能: 讀取指定的excel，並將欄寬自動最佳化 (Automatically adjust column widths in Excel)
 # 使用方式: 先指定name_of_wb為想要自動化的workbook檔案名稱
-def auto_fit(name_of_wb=''):  # Input: Excel file name
-    if name_of_wb != '':
-        from openpyxl import load_workbook
-        from openpyxl.utils import get_column_letter
-
-        # 讀取已經存在的特定檔案
-        wb = load_workbook(name_of_wb)  # ()裡面是完整的檔案名稱
-        # 對每個分頁做auto_fit
-        for i in wb.sheetnames:
-            ws = wb[i]
-            # auto_fit:
-            for letter_num in range(1, ws.max_column + 1):
-                max_width = 0
-                letter = get_column_letter(letter_num)  # 數字轉A, B, C.....AA, AB, AC......
-                for row_number in range(1, ws.max_row + 1):
-                    # 用try避免讀到空白時跳error卡住
-                    try:  # 取特定欄位A1的值，要寫ws['A1'].value，依此類推
-                        if len(ws[
-                                   f'{letter}{row_number}'].value) > max_width:  # update max_width if the length of cell value is longer than current max_width
-                            max_width = len(ws[f'{letter}{row_number}'].value)
-                    except:
-                        pass
-                ws.column_dimensions[letter].width = (max_width + 2) * 1.2
-        wb.save(name_of_wb)
+# def auto_fit(name_of_wb=''):  # Input: Excel file name
+#     if name_of_wb != '':
+#         from openpyxl import load_workbook
+#         from openpyxl.utils import get_column_letter
+#
+#         # 讀取已經存在的特定檔案
+#         wb = load_workbook(name_of_wb)  # ()裡面是完整的檔案名稱
+#         # 對每個分頁做auto_fit
+#         for i in wb.sheetnames:
+#             ws = wb[i]
+#             # auto_fit:
+#             for letter_num in range(1, ws.max_column + 1):
+#                 max_width = 0
+#                 letter = get_column_letter(letter_num)  # 數字轉A, B, C.....AA, AB, AC......
+#                 for row_number in range(1, ws.max_row + 1):
+#                     # 用try避免讀到空白時跳error卡住
+#                     try:  # 取特定欄位A1的值，要寫ws['A1'].value，依此類推
+#                         if len(ws[
+#                                    f'{letter}{row_number}'].value) > max_width:  # update max_width if the length of cell value is longer than current max_width
+#                             max_width = len(ws[f'{letter}{row_number}'].value)
+#                     except:
+#                         pass
+#                 ws.column_dimensions[letter].width = (max_width + 2) * 1.2
+#         wb.save(name_of_wb)
 
 def moving_average(x, w):
     """
@@ -620,7 +620,8 @@ if isinstance(typed_path, str) and typed_path.strip():
 
     drive, _ = os.path.splitdrive(tp) # extract drive
     if drive:
-        drive_root = os.path.join(drive + ":", "")
+        drv = drive.rstrip(":").upper()
+        drive_root = f"{drv}:{os.sep}"
         if os.path.exists(drive_root):
             st.session_state["selected_network"] = drive_root # auto-select the drive in `selected_network` selectbox based on user input
 
@@ -636,17 +637,25 @@ if isinstance(typed_path, str) and typed_path.strip():
         path_override = tp
 
 path_selection = st.empty()
-path_selection.markdown("File path: ")
 selected_network = st.selectbox("Select a file path", network, key="selected_network", label_visibility="collapsed", index=None, placeholder="Select a network drive")
 if not isinstance(selected_network, str):
-    st.stop()
+    st.stop() # wait for user to select
 ROOT = selected_network
+
+if "previous_network" not in st.session_state:
+    st.session_state["previous_network"] = None
+if st.session_state["previous_network"] != selected_network:
+    st.session_state["previous_network"] = selected_network
+    st.session_state.pop("selected_folder", None)
+    typed_steps = []
+    typed_ptr = 0
+    path_override = None
 
 path_selection.markdown(f"`{ROOT}`")
 
 selected_folder = False
 if isinstance(selected_network, str) and selected_network.startswith(("M", "Z")): # M: and Z: drives contain raw data
-    selected_folder = st.selectbox("Select a bevel folder", ["EDL", "EDU"], key="selected_folder", label_visibility="collapsed", index=None, placeholder="Select a folder")
+    selected_folder = st.selectbox("Select a bevel folder", ["EDL", "EDU"], key="selected_folder", label_visibility="collapsed", index=None, placeholder="Bevel")
     if not isinstance(selected_folder, str):
         st.stop()
     ROOT = os.path.join(selected_network, selected_folder)
@@ -656,14 +665,14 @@ typed_zip = None # .zip file name if user typed the full file path
 typed_ptr = 0 # index to keep track of how many files have been auto-navigated through
 
 if path_override:
-    if tp.lower().endswith(".zip") and os.path.isfile(tp): # if typed path ends with .zip and points to an existing file
+    if tp.lower().endswith(".zip") and os.path.isfile(tp): # if typed path ends with .zip and points to an existing file...
         typed_zip = os.path.basename(tp)  # .zip file name = the base name of the typed file path
         path_override = os.path.dirname(tp) #  path_override = parent folder (i.e., file path leading to .zip file)
     try:
         rel = os.path.relpath(path_override, ROOT) if ROOT else None # rel = relative path from ROOT (e.g., M:\EDL) to path_override (e.g., M:\EDL\2025-08\C\4300) -> rel becomes 2025-08\C\4300
-        if rel and not rel.startswith(os.pardir): # if rel does not start with ".." meaning that it is inside ROOT
+        if rel and not rel.startswith(os.pardir): # if rel does not start with ".." meaning that it is inside ROOT...
             typed_steps = [p for p in rel.split(os.sep) if p] # then split the path into folder components using os.sep (/ or \)
-        else: # if rel starts with ".." meaning that it is outside ROOT
+        else: # if rel starts with ".." meaning that it is outside ROOT...
             typed_steps = [p for p in os.path.normpath(path_override).split(os.sep) if p] # then normalize and split the path
     except Exception:
         typed_steps = [p for p in os.path.normpath(path_override).split(os.sep) if p]
@@ -676,8 +685,8 @@ if isinstance(ROOT, str):
     level = 0 # index to keep track of how many files have been auto-navigated through
     while True: # Keep looping and go down each folder until a .zip file is found
         try:
-            with os.scandir(current_path) as it:
-                dirs = sorted([e.name for e in it if e.is_dir()])
+            with os.scandir(current_path) as it: # Step 1. scan the directory, returning a sequence of DirEntry objects, each representing  a folder
+                dirs = sorted([e.name for e in it if e.is_dir()]) # scan each DirEntry (e) in it and filter out files that are not folder; only directories are kept
 
                 path_selection.markdown(f"`{current_path}`")
 
@@ -685,43 +694,38 @@ if isinstance(ROOT, str):
             st.error("Path not found.")
             st.stop()
 
-        with os.scandir(current_path) as it:
-            zips = sorted([e.name for e in it if e.is_file() and e.name.lower().endswith(".zip")])
+        with os.scandir(current_path) as it: # Step 2. scan the directory again
+            zips = sorted([e.name for e in it if e.is_file() and e.name.lower().endswith(".zip")]) # this time, collect .zip files
 
-        if zips:
-            if typed_zip and typed_zip in zips:
-                # Pre-fill selectbox value so the UI reflects the typed choice
+        if zips: # Step 3. if .zip files are found...
+            if typed_zip and typed_zip in zips: # if user has typed file path and it exists in zips
+                # Pre-fill selectbox value so it reflects the typed choice
                 st.session_state[f"zip_select_{current_path}"] = typed_zip
-                selected_zip_name = typed_zip
+                waferid = typed_zip
             else:
-                selected_zip_name = st.selectbox(
-                    "Select a **.zip** file. The .bmp file will be extracted.",
-                    zips,
-                    key=f"zip_select_{current_path}",
-                    index=None,
-                    placeholder="Select a .zip file"
-                )
-                if not isinstance(selected_zip_name, str):
+                waferid = st.selectbox("Select a **.zip** file. The .bmp file will be extracted.", zips, key=f"zip_select_{current_path}", index=None, placeholder="Wafer ID")
+                if not isinstance(waferid, str):
                     st.stop()
 
-            selected_zip = os.path.join(current_path, selected_zip_name)
+            selected_zip = os.path.join(current_path, waferid)
             break  # done navigating; proceed to processing
 
         if len(dirs) == 0: # if no folders or .zip files are found
             st.error(f"No .zip files found under: {current_path}")
             st.stop()
 
-        if len(dirs) == 1: # "auto-skip" folder; if it only contains one folder, automatically proceed to the next folder so that user does not need to select the single folder
-            only = dirs[0]
+        # "auto-skip" folder; if it only contains one folder, automatically proceed to the next folder so that user does not need to select the single folder
+        if len(dirs) == 1: # if the current directory contains exactly 1 folder (dirs is a list of folder names)...
+            only = dirs[0] # extract the only folder name from the list dirs
             current_path = os.path.join(current_path, only)
-        else:
+        else: # if the current directory contains multiple folders len(dirs) > 1...
             auto_choice = None
-            if typed_ptr < len(typed_steps):
+            if typed_ptr < len(typed_steps): # check if there are unprocessed folders from the typed path...
                 candidate = typed_steps[typed_ptr]
-                if candidate in dirs:
+                if candidate in dirs: # if the unprocessed folder exists in the list of folder names (dirs)...
                     st.session_state[f"dir_select_level_{level}"] = candidate
                     auto_choice = candidate
-                    typed_ptr += 1  # advance only when we used this step
+                    typed_ptr += 1  # advance to the next folder
 
             if auto_choice is None:
                 selected_dir = st.selectbox("Select a folder", dirs, key=f"dir_select_level_{level}", label_visibility="collapsed", index=None, placeholder="Select a folder")
@@ -768,17 +772,16 @@ if isinstance(ROOT, str):
                 cols = ['filename', 'Ra_raw', 'RawQ50', 'RawQ90', 'RawQ99', 'Ra_mv', 'MvQ50', 'MvQ90', 'MvQ99']
                 df = pd.DataFrame(rows, columns=cols)
 
-                summary_xlsx = os.path.join(outdir, "nss_image_summary.xlsx")
-                df.to_excel(summary_xlsx, index=False)
-                auto_fit(summary_xlsx)
+                summary_csv = os.path.join(outdir, "nss_image_summary.csv")
+                df.to_csv(summary_csv, index=False)
+                # auto_fit(summary_xlsx)
 
                 st.subheader("Summary")
                 st.dataframe(df, use_container_width=True)
+                # st.success("Done. Download below.")
                 st.download_button(
                     "Download",
-                    data=open(summary_xlsx, "rb").read(),
-                    file_name="nss_image_summary.xlsx",
+                    data=open(summary_csv, "rb").read(),
+                    file_name="nss_image_summary.csv",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
-
-                st.success("Done.")
